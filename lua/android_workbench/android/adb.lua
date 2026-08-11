@@ -15,26 +15,14 @@ local DEVICE_STATES = {
   authorizing = true,
   bootloader = true,
   connecting = true,
+  detached = true,
+  device = true,
   host = true,
   offline = true,
   recovery = true,
   rescue = true,
   sideload = true,
   unauthorized = true,
-}
-
-local DEVICE_STATE_NAMES = {
-  'no permissions',
-  'device',
-  'authorizing',
-  'bootloader',
-  'connecting',
-  'host',
-  'offline',
-  'recovery',
-  'rescue',
-  'sideload',
-  'unauthorized',
 }
 
 local function failure(code, message, details)
@@ -123,17 +111,32 @@ local function normalized_state(raw_state)
 end
 
 local function split_device_entry(line)
-  for _, raw_state in ipairs(DEVICE_STATE_NAMES) do
-    local state_pattern = raw_state == 'no permissions' and 'no%s+permissions' or raw_state
-    local serial, detail = line:match('^(.*)%s+' .. state_pattern .. '%s+(.*)$')
-    if serial == nil then
-      serial = line:match('^(.*)%s+' .. state_pattern .. '$')
-      detail = ''
+  local cursor = #line
+  while cursor > 0 do
+    local prefix = line:sub(1, cursor)
+    local token_start, _, token = prefix:find '(%S+)%s*$'
+    if not token_start then break end
+
+    local raw_state
+    local state_start = token_start
+    if DEVICE_STATES[token] then
+      raw_state = token
+    elseif token == 'permissions' then
+      local previous_prefix = line:sub(1, token_start - 1)
+      local previous_start, _, previous = previous_prefix:find '(%S+)%s*$'
+      if previous == 'no' then
+        raw_state = 'no permissions'
+        state_start = previous_start
+      end
     end
-    if serial ~= nil then
-      serial = vim.trim(serial)
+
+    if raw_state then
+      local serial = line:sub(1, state_start - 1):gsub('%s+$', '')
+      local detail = vim.trim(line:sub(token_start + #token))
       if validate_serial(serial) then return serial, raw_state .. (detail ~= '' and ' ' .. detail or '') end
     end
+
+    cursor = token_start - 1
   end
 
   local serial, remainder = line:match '^(%S+)%s+(.+)$'
@@ -147,10 +150,10 @@ local function parse_devices(stdout)
   local serials = {}
 
   for _, line in ipairs(output) do
-    line = vim.trim(line)
-    if line ~= '' then
+    local trimmed = vim.trim(line)
+    if trimmed ~= '' then
       if not header_seen then
-        if line ~= 'List of devices attached' then
+        if trimmed ~= 'List of devices attached' then
           return nil, failure('invalid_devices_output', 'ADB returned an unrecognized device list.', { output = excerpt(stdout) })
         end
         header_seen = true

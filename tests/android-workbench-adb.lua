@@ -64,12 +64,14 @@ local ok, unexpected = xpcall(function()
   end
 
   local wireless_serial = 'adb-example (2)._adb-tls-connect._tcp'
+  local leading_space_serial = ' adb-leading-example._adb-tls-connect._tcp'
+  local detached_serial = 'adb-detached (2)._adb-tls-connect._tcp'
   local devices_output = [[List of devices attached
 emulator-5554 device product:sdk_gphone64_arm64 model:Pixel_8_Pro device:emu64a transport_id:1
 R58M123 unauthorized usb:1-2 transport_id:2
 R58M999 no permissions (user in plugdev group); see [http://developer.android.com/tools/device.html]
 R58M321 device product:e1q model:Galaxy_S24 device:e1q transport_id:3
-]] .. wireless_serial .. ' device product:e1q model:CPH2583 device:OP595DL1 transport_id:4\n'
+]] .. wireless_serial .. ' device product:e1q model:CPH2583 device:OP595DL1 transport_id:4\n' .. leading_space_serial .. ' device product:blazer model:Pixel_10_Pro device:blazer transport_id:5\n' .. detached_serial .. ' detached transport_id:6\n'
 
   respond { stdout = devices_output }
   local completed = await(function(callback) return service:list_devices(callback) end)
@@ -90,6 +92,10 @@ R58M321 device product:e1q model:Galaxy_S24 device:e1q transport_id:3
   expect('no-permissions explanation is preserved', completed.value[3].details, '(user in plugdev group); see [http://developer.android.com/tools/device.html]')
   expect('wireless serial with spaces is preserved', completed.value[5].serial, wireless_serial)
   expect('wireless serial state is normalized', completed.value[5].state, 'online')
+  expect('leading space in serial is preserved', completed.value[6].serial, leading_space_serial)
+  expect('leading-space serial state is normalized', completed.value[6].state, 'online')
+  expect('detached serial with spaces is preserved', completed.value[7].serial, detached_serial)
+  expect('detached state is preserved', completed.value[7].state, 'detached')
   expect('device listing uses direct argv', invocations[1].argv, { '/fake/adb', 'devices', '-l' })
   expect('device listing requests text streams', invocations[1].opts.text, true)
 
