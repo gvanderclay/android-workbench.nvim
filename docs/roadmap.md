@@ -26,10 +26,10 @@ than feature count.
   standalone checks and formatting verification.
 - [x] Move durable architecture and design rationale into the package
   repository while leaving consumer mappings and provider composition outside.
-- [ ] Make an external consumer configuration use the exact repository package
+- [x] Make an external consumer configuration use the exact repository package
   and pinned revision, retain only a small coexistence/configuration smoke
   there, and remove its duplicate in-tree runtime, tests, and vimdoc.
-- [ ] Confirm the first remote CI run succeeds from the public repository.
+- [x] Confirm the first remote CI run succeeds from the public repository.
 
 The extraction baseline establishes compartmentalized ownership. It does not
 close the runtime or release gates below.

@@ -203,6 +203,32 @@ vimdoc and tests.
   needs bounded search context, task-rule-only tasks become a concrete workflow,
   or the exact-ID contract must support another demonstrated execution mode.
 
+## AN007 — Separate package source from consumer policy
+
+- **Status:** Accepted
+- **Decision:** Maintain the reusable runtime, bundled provider, vimdoc,
+  architecture, and contract tests in this standalone repository. Keep package
+  installation, optional-adapter composition, mappings, and editor-wide policy
+  in consuming configurations.
+- **Requirements:** Preserve the module namespace, command grammar, state path,
+  and native behavior during extraction. The package must load and test without
+  a consumer configuration or optional dependencies. A consumer pins one
+  external revision and does not retain a second runtime copy.
+- **Considered:** Keep the package embedded; retain synchronized copies; freeze
+  and release every reachable module immediately; or establish one pre-release
+  package source with external consumers.
+- **Rationale:** Independent source, tests, CI, documentation, and issue history
+  let package work proceed without coupling it to personal configuration work.
+  One installed source also prevents runtime and help ambiguity.
+- **Tradeoffs:** Consumers now depend on package installation and revision
+  updates. Source visibility does not make the current pre-1.0 API stable or
+  close the licensing and release gates.
+- **Consequences:** Package changes use this repository's tests and roadmap.
+  Consumer repositories test only their installation, mappings, optional
+  adapters, and coexistence policy.
+- **Revisit when:** No active consumer remains, another package boundary proves
+  simpler, or the release roadmap selects a licensed stable API.
+
 ## Repository extraction status
 
 Moving the runtime into this repository does not change AN001–AN006. The module
