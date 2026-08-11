@@ -1,0 +1,10 @@
+:Android	android-workbench.txt	/*:Android*
+:Android-emulator-start	android-workbench.txt	/*:Android-emulator-start*
+:Android-emulator-stop	android-workbench.txt	/*:Android-emulator-stop*
+:Android-gradle	android-workbench.txt	/*:Android-gradle*
+android-workbench	android-workbench.txt	/*android-workbench*
+android-workbench-commands	android-workbench.txt	/*android-workbench-commands*
+android-workbench-introduction	android-workbench.txt	/*android-workbench-introduction*
+android-workbench-setup	android-workbench.txt	/*android-workbench-setup*
+android-workbench-trust	android-workbench.txt	/*android-workbench-trust*
+android-workbench.txt	android-workbench.txt	/*android-workbench.txt*

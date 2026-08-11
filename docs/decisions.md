@@ -1,0 +1,215 @@
+# Android Workbench decision record
+
+This record preserves the durable design decisions that shaped Android
+Workbench before and during its extraction into a standalone repository. It
+explains why current boundaries exist; current behavior remains defined by the
+vimdoc and tests.
+
+## AN001 — Build a focused, swappable Android workflow
+
+- **Status:** Accepted
+- **Decision:** Build Android Workbench as an Android-only orchestration layer.
+  Reuse optional picker and task libraries through explicit adapters, retain
+  dependency-free native defaults, and keep Gradle discovery, ADB coordination,
+  target state, emulator lifecycle, build problems, and app-scoped Logcat under
+  focused internal ownership.
+- **Requirements:** Support multi-module and composite Android projects, exact
+  application/variant/device selection, trusted and cancellable Gradle
+  execution, Build/Run/Stop, arbitrary registered Gradle tasks, inspectable
+  output, emulator lifecycle, and Logcat without taking over unrelated editor
+  behavior or requiring one presentation plugin.
+- **Considered:** Existing Android Neovim plugins, Gradle-specific plugins,
+  Overseer alone, generic task frameworks, raw terminal commands, the Android
+  CLI, and a focused owned implementation composed with maintained libraries.
+- **Rationale:** Existing plugins either own a broader IDE surface or do not
+  expose the trusted composite-build model required here. A task runner can own
+  task lifecycle and presentation but does not supply the Android/Gradle domain
+  model. Explicit adapters let a consumer choose Telescope or Overseer without
+  leaking them into core behavior.
+- **Tradeoffs:** Workbench carries more code and has less public adoption and
+  release maturity than established plugins. Its adapter contracts must remain
+  deliberately small and well tested.
+- **Consequences:** The package defines one namespaced command and facade, but no
+  global mappings, WhichKey dependency, autosave, watcher, LSP, formatter, DAP,
+  or test runner. Consumer mappings and concrete presentation choices remain
+  outside the package. New providers are added only for real alternatives; no
+  registry, automatic detection, or dependency-injection container is implied.
+- **Revisit when:** A maintained community plugin satisfies the same trust,
+  composite-build, coexistence, and swappability requirements, or daily use
+  exposes an ownership flaw.
+
+## AN002 — Refactor only at demonstrated lifecycle seams
+
+- **Status:** Accepted
+- **Decision:** Preserve the public facade, `App` composition root, explicit
+  ports, and current workflow semantics. Reject broad rewrites and
+  file-size-driven splits. Refactor only when characterization demonstrates a
+  cohesive lifecycle or removes a correctness hazard.
+- **Requirements:** Establish behavior before moving it; keep trust adjacent to
+  project execution; handle synchronous callbacks, exactly-once terminals,
+  stale generations, cancellation refusal, bounded output, root isolation, and
+  revision-safe selection updates.
+- **Considered:** Splitting `App`, ADB, emulator, or native Logcat because of
+  line count; a dependency-injection container; provider registries; broad
+  compatibility abstractions; retaining every duplicated orchestration path;
+  and a full rewrite.
+- **Rationale:** Large lifecycle modules are not automatically incohesive. The
+  demonstrated seams were a provider-neutral task operation, shared
+  model/target/device preflight, and unified device coordination once AVD work
+  existed. Each gives one owner a real lifecycle without widening public API.
+- **Tradeoffs:** Some modules remain large. That is preferable to distributing
+  tightly coupled state transitions or creating speculative public seams.
+- **Consequences:** `task_operation.lua` owns neutral task validation, bounded
+  output, and terminal behavior for native and Overseer runners. `App` owns
+  shared preflight and remains the only composition root. Device coordination
+  owns unified inventory and stable selection without becoming a generic device
+  framework.
+- **Revisit when:** A responsibility gains an independently testable lifecycle,
+  a second implementation needs a different boundary, or measurements show a
+  current owner is a bottleneck.
+
+## AN003 — Model AVDs as stable resources behind a semantic emulator port
+
+- **Status:** Accepted
+- **Decision:** Represent a stopped AVD as `{ avd_name }` and a running emulator
+  as `{ avd_name, serial }`. Keep unified physical/running-AVD/stopped-AVD
+  inventory and revision-safe selection in the device coordinator. Put
+  list/start-to-ready/exact-stop behavior behind a semantic emulator port while
+  raw ADB parsing remains in the ADB service.
+- **Requirements:** Use direct argv with the classic emulator and ADB tools.
+  Revalidate serial plus AVD name, reject ambiguous duplicates, use bounded boot
+  readiness, and wait for stop disappearance. Cancellation may terminate only a
+  launcher process Workbench created and still owns. Ready, adopted, and
+  pre-existing emulators outlive the operation and Neovim.
+- **Considered:** Routing the long-lived emulator through the Gradle runner or
+  Overseer, exposing a generic process port, using an emerging Android CLI as
+  the default, importing Android Studio state, separate ADB/AVD action hubs, and
+  adding a generic polling framework.
+- **Rationale:** Emulator process exit is not workflow success; exact boot
+  readiness is. A semantic lifecycle keeps that distinction out of the task
+  runner. Stable AVD names preserve intent across console-port changes without
+  weakening wrong-device protection.
+- **Tradeoffs:** The native implementation targets local classic emulator
+  instances with console-port serials. Its in-process same-name guard cannot be
+  atomic across separate Neovim processes, so a final live identity scan remains
+  authoritative. A custom ADB service may need a paired custom emulator service
+  for native AVD workflows.
+- **Consequences:** Device selection presents one neutral inventory. Run may
+  start a remembered stopped AVD by explicit configuration; application Stop
+  and Logcat never do. AVD creation, deletion, wiping, cold boot, snapshots, SDK
+  installation, Android Studio state, and an embedded emulator remain outside
+  scope.
+- **Revisit when:** A second mature emulator backend needs different semantics,
+  a cross-process duplicate problem becomes observable, or a supported platform
+  cannot implement the current exact-identity contract.
+
+## AN004 — Separate Gradle problem collection from presentation
+
+- **Status:** Accepted; extended by AN005
+- **Decision:** Parse bounded Build/Run/Gradle-task output into neutral source
+  problems, carry them through runner results, and publish one accepted terminal
+  batch through an explicit problem-sink port. Use a root-keyed native quickfix
+  sink as the dependency-free default.
+- **Requirements:** Preserve native-runner and optional-runner parity, root
+  isolation, cancellation ownership, and stale-terminal rejection. Publish only
+  after the active operation accepts a valid Gradle terminal. A success clears
+  only that root's Workbench result; cancellation and failures before a Gradle
+  terminal preserve it. Never select or close unrelated quickfix history.
+- **Considered:** Publishing directly from Overseer parsers, parsing only final
+  captured tails in `App`, automatic Trouble components, diagnostics as the
+  canonical store, a parser registry, and a neutral terminal batch with an
+  explicit native presenter.
+- **Rationale:** Task output parsing, terminal acceptance, problem storage, and
+  window policy have different owners. Keeping them distinct prevents provider
+  UI state from changing before Workbench accepts a terminal and gives native
+  and optional runners the same core boundary.
+- **Tradeoffs:** The focused matcher recognizes only fixture-backed Kotlin,
+  Java, Android Lint, AAPT, and AGP locations. Locationless and unfamiliar
+  failures remain in runner output. The built-in sink owns only the latest list
+  per root rather than a full history UI.
+- **Consequences:** `ports.problems.publish(batch)` is synchronous and
+  presentation-neutral. Problem DTOs carry normalized absolute paths,
+  one-based positions, bounded messages, severity, and truncation state.
+  Reveal/close behavior belongs to a constructed sink, not top-level setup.
+  Trouble is never required or opened automatically.
+- **Revisit when:** Real output justifies another recognized format, a second
+  presenter needs additional neutral data, or the terminal policy must represent
+  a demonstrated workflow that the current batch cannot express.
+
+## AN005 — Keep diagnostics an explicit projection over canonical quickfix
+
+- **Status:** Accepted
+- **Decision:** Keep the native root-keyed quickfix sink as the default and
+  canonical complete problem collection. Offer an optional native diagnostic
+  decorator with a dedicated namespace per root. Do not add a top-level
+  presentation option, require Trouble, or change runner terminal ownership.
+- **Requirements:** Deliver accepted batches to the downstream sink, retain root
+  isolation and success/cancellation semantics, and keep diagnostic state in
+  memory. Project only into eligible unmodified buffers, invalidate a buffer's
+  build diagnostics after edits, and never load or read source merely to
+  decorate it. Do not retain a problem-batch cache.
+- **Considered:** Quickfix alone, replacing quickfix with diagnostics, direct
+  publication from runners, automatic Trouble opening, retaining diagnostics
+  after source edits, and explicit decoration of the canonical sink.
+- **Rationale:** Native diagnostics give consumers signs, underlines, inline
+  messages, navigation, status, and optional diagnostic browsers without adding
+  another task or output owner. Explicit decoration preserves the accepted-
+  terminal gate and keeps the package default restrained.
+- **Tradeoffs:** Build diagnostics are compiler snapshots, not live analysis.
+  Editing invalidates them until a later accepted failure. A language server may
+  publish an equivalent diagnostic, so consumers can see duplicates. Modified
+  buffers rely on quickfix as the complete build-result view.
+- **Consequences:** Consumers may construct
+  `integrations.diagnostics.new({ sink = quickfix })`. This adds no mapping,
+  global diagnostic policy, persistence, or Trouble integration. A downstream
+  rejection returns before diagnostic mutation.
+- **Revisit when:** Daily use shows misleading duplication, edit invalidation
+  hides useful context, or another diagnostic consumer needs more neutral
+  metadata.
+
+## AN006 — Discover registered Gradle task names without realizing tasks
+
+- **Status:** Accepted
+- **Decision:** Extend the trusted Android model with exact names of registered
+  Gradle tasks and execute one selected task through existing discovery, picker,
+  runner, cancellation, and problem-sink boundaries. Keep discovery names-only
+  and non-realizing.
+- **Requirements:** Always present a flat lexically sorted exact-ID picker,
+  including a singleton. Treat the returned ID as untrusted, resolve it against
+  the offered set, discover normally again, and resolve it from the current
+  complete snapshot. Reject disappearance as stale, then authorize immediately
+  before direct wrapper execution. Do not read or mutate target/device state or
+  invoke ADB.
+- **Considered:** Parsing `gradlew tasks --all`, realizing tasks for groups and
+  descriptions, caching a second catalog, shell strings and free-form arguments,
+  a separate Gradle plugin/UI owner, and extending the existing bounded provider
+  with `TaskContainer.names`.
+- **Rationale:** The established model already owns trusted multi-build identity
+  and freshness, while the runner owns cancellable output. Registered names are
+  a non-realizing Gradle surface. Reusing those owners avoids prose parsing,
+  stale secondary caches, shell quoting, another output view, and hard
+  dependencies on picker/task plugins.
+- **Tradeoffs:** The picker cannot show groups or descriptions without realizing
+  task objects. Rule-synthesized tasks are accepted by Gradle but absent from the
+  catalog. Composite identity before Gradle's public build-path API must fail
+  closed when parent/include relationships are ambiguous. Very large projects
+  may produce a long flat list.
+- **Consequences:** The neutral task DTO is exactly
+  `{ id, build_path, project_path, name }`. Execution uses direct argv equivalent
+  to `{ wrapper, '--console=plain', exact_id }` at the canonical root, with no
+  shell, extra args, device environment, or persisted task choice. The package
+  adds no mapping or provider dependency for this workflow.
+- **Revisit when:** Gradle exposes stable non-realizing task metadata, real use
+  needs bounded search context, task-rule-only tasks become a concrete workflow,
+  or the exact-ID contract must support another demonstrated execution mode.
+
+## Repository extraction status
+
+Moving the runtime into this repository does not change AN001–AN006. The module
+namespace, command, state location, bundled provider placement, and consumer
+policy boundary remain intact. Extraction is a packaging and ownership change,
+not permission to widen the plugin or freeze every reachable Lua module.
+
+The repository is source-visible but not yet licensed or released. Runtime
+containment, default output, public API, compatibility, and release evidence are
+tracked separately in `roadmap.md`.

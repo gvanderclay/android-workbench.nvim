@@ -1,0 +1,486 @@
+import groovy.json.JsonOutput
+import groovy.transform.Field
+import java.nio.charset.StandardCharsets
+import java.util.Locale
+import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.MapProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.TaskAction
+import org.gradle.util.GradleVersion
+
+@Field static final String ANDROID_WORKBENCH_MARKER = '__ANDROID_WORKBENCH_DISCOVERY_V1__'
+@Field static final String ANDROID_WORKBENCH_NONCE_ENV = 'ANDROID_WORKBENCH_DISCOVERY_NONCE'
+@Field static final String ANDROID_WORKBENCH_BUILD_TASK = '__androidWorkbenchDiscoverV1'
+@Field static final String ANDROID_WORKBENCH_PROJECT_TASK = '__androidWorkbenchEmitProjectV1'
+
+abstract class AndroidWorkbenchProjectModelTask extends DefaultTask {
+    private static final String RECORD_MARKER = '__ANDROID_WORKBENCH_DISCOVERY_V1__'
+
+    @Input
+    abstract MapProperty<String, String> getApplicationIds()
+
+    @Input
+    abstract MapProperty<String, String> getAssembleTaskNames()
+
+    @Input
+    abstract MapProperty<String, String> getInstallTaskNames()
+
+    @Input
+    abstract Property<String> getNonce()
+
+    @Input
+    abstract Property<String> getBuildPathValue()
+
+    @Input
+    abstract Property<String> getBuildRootValue()
+
+    @Input
+    abstract Property<String> getProjectPathValue()
+
+    @Input
+    abstract Property<String> getProjectDirValue()
+
+    void emit(Map<String, ?> record) {
+        record.schema = 1
+        record.nonce = nonce.get()
+        logger.quiet(RECORD_MARKER + JsonOutput.toJson(record))
+    }
+
+    static String qualify(String buildPath, String projectPath, String taskName) {
+        List<String> segments = []
+        if (buildPath != ':') {
+            segments.add(buildPath.substring(1))
+        }
+        if (projectPath != ':') {
+            segments.add(projectPath.substring(1))
+        }
+        segments.add(taskName)
+        return ':' + segments.join(':')
+    }
+
+    @TaskAction
+    void emitModel() {
+        String nonceValue = nonce.get()
+        if (!(nonceValue ==~ /[a-f0-9]{32}/)) {
+            throw new GradleException('Android Workbench [invalid_nonce]: discovery nonce is missing or invalid')
+        }
+
+        Map<String, String> appIds = applicationIds.get()
+        Map<String, String> assembleNames = assembleTaskNames.get()
+        Map<String, String> installNames = installTaskNames.get()
+        if (appIds.keySet() != assembleNames.keySet() || !appIds.keySet().containsAll(installNames.keySet())) {
+            throw new GradleException('Android Workbench [incomplete_model]: variant task inputs do not match application IDs')
+        }
+
+        String buildPath = buildPathValue.get()
+        String projectPath = projectPathValue.get()
+        appIds.keySet().sort().each { String variantName ->
+            this.emit([
+                type: 'target',
+                build_path: buildPath,
+                build_root: buildRootValue.get(),
+                project_path: projectPath,
+                project_dir: projectDirValue.get(),
+                variant: variantName,
+                application_id: appIds.get(variantName),
+                assemble_task: AndroidWorkbenchProjectModelTask.qualify(
+                    buildPath,
+                    projectPath,
+                    assembleNames.get(variantName)
+                ),
+                install_task: installNames.containsKey(variantName)
+                    ? AndroidWorkbenchProjectModelTask.qualify(
+                        buildPath,
+                        projectPath,
+                        installNames.get(variantName)
+                    )
+                    : null,
+            ])
+        }
+
+        this.emit([
+            type: 'project_complete',
+            build_path: buildPath,
+            project_path: projectPath,
+            target_count: appIds.size(),
+        ])
+    }
+}
+
+abstract class AndroidWorkbenchBuildModelTask extends DefaultTask {
+    private static final String RECORD_MARKER = '__ANDROID_WORKBENCH_DISCOVERY_V1__'
+    private static final int MAX_RECORD_BYTES = 65536
+    private static final int MAX_TASK_ID_BYTES = 4096
+    private static final int MAX_TASKS = 1048576
+    private static final String DISCOVERY_TASK = '__androidWorkbenchDiscoverV1'
+    private static final String PROJECT_TASK = '__androidWorkbenchEmitProjectV1'
+
+    @Input
+    abstract Property<String> getNonce()
+
+    @Input
+    abstract Property<String> getBuildPathValue()
+
+    @Input
+    abstract Property<String> getBuildRootValue()
+
+    @Input
+    abstract ListProperty<String> getApplicationProjects()
+
+    @Input
+    abstract MapProperty<String, List<String>> getTaskNamesByProject()
+
+    @Input
+    abstract ListProperty<String> getIncludedBuildRoots()
+
+    @Input
+    abstract Property<Boolean> getInvocationRoot()
+
+    String encode(Map<String, ?> record) {
+        record.schema = 1
+        record.nonce = nonce.get()
+        return JsonOutput.toJson(record)
+    }
+
+    void emit(Map<String, ?> record) {
+        String payload = encode(record)
+        if (payload.getBytes(StandardCharsets.UTF_8).length > MAX_RECORD_BYTES) {
+            throw new GradleException('Android Workbench [record_too_large]: discovery record exceeds its byte limit')
+        }
+        logger.quiet(RECORD_MARKER + payload)
+    }
+
+    void failTaskDiscovery(String code, String message, Map<String, ?> details = [:]) {
+        emit([type: 'error', code: code, message: message, details: details])
+        throw new GradleException("Android Workbench [${code}]: ${message}")
+    }
+
+    static boolean isExecutableTaskName(String name) {
+        if (name == null || name.isEmpty() || name.startsWith('.') || name.endsWith('.')) {
+            return false
+        }
+        String forbidden = '/\\:<>"?*|'
+        for (int index = 0; index < name.length(); index++) {
+            if (forbidden.indexOf(name.substring(index, index + 1)) >= 0) {
+                return false
+            }
+        }
+        return true
+    }
+
+    static boolean isTransportableTaskName(String buildPath, String projectPath, String name) {
+        for (int index = 0; index < name.length(); index++) {
+            char current = name.charAt(index)
+            if (current <= 31) {
+                return false
+            }
+            if (Character.isHighSurrogate(current)) {
+                if (index + 1 >= name.length() || !Character.isLowSurrogate(name.charAt(index + 1))) {
+                    return false
+                }
+                index++
+            } else if (Character.isLowSurrogate(current)) {
+                return false
+            }
+        }
+        String qualifiedId = AndroidWorkbenchProjectModelTask.qualify(buildPath, projectPath, name)
+        return qualifiedId.getBytes(StandardCharsets.UTF_8).length <= MAX_TASK_ID_BYTES
+    }
+
+    boolean isInternalTask(String projectPath, String taskName, Set<String> applicationProjectPaths) {
+        return (projectPath == ':' && taskName == DISCOVERY_TASK) ||
+            (applicationProjectPaths.contains(projectPath) && taskName == PROJECT_TASK)
+    }
+
+    int emitTaskChunks(String buildPath, String projectPath, List<String> names) {
+        int chunkIndex = 1
+        List<String> chunk = []
+        int chunkBytes = encode([
+            type: 'task_chunk',
+            build_path: buildPath,
+            project_path: projectPath,
+            chunk_index: chunkIndex,
+            names: [],
+        ]).getBytes(StandardCharsets.UTF_8).length
+        names.each { String taskName ->
+            int encodedNameBytes = JsonOutput.toJson(taskName).getBytes(StandardCharsets.UTF_8).length
+            int separatorBytes = chunk.isEmpty() ? 0 : 1
+            if (chunkBytes + separatorBytes + encodedNameBytes <= MAX_RECORD_BYTES) {
+                chunk.add(taskName)
+                chunkBytes += separatorBytes + encodedNameBytes
+            } else {
+                if (chunk.isEmpty()) {
+                    failTaskDiscovery(
+                        'untransportable_task_name',
+                        "task ${projectPath} has a name that exceeds the discovery record limit",
+                        [build_path: buildPath, project_path: projectPath, utf8_bytes: taskName.getBytes(StandardCharsets.UTF_8).length]
+                    )
+                }
+                emit([
+                    type: 'task_chunk',
+                    build_path: buildPath,
+                    project_path: projectPath,
+                    chunk_index: chunkIndex,
+                    names: chunk,
+                ])
+                chunkIndex++
+                chunk = [taskName]
+                chunkBytes = encode([
+                    type: 'task_chunk',
+                    build_path: buildPath,
+                    project_path: projectPath,
+                    chunk_index: chunkIndex,
+                    names: [],
+                ]).getBytes(StandardCharsets.UTF_8).length + encodedNameBytes
+                if (chunkBytes > MAX_RECORD_BYTES) {
+                    failTaskDiscovery(
+                        'untransportable_task_name',
+                        "task ${projectPath} has a name that exceeds the discovery record limit",
+                        [build_path: buildPath, project_path: projectPath, utf8_bytes: taskName.getBytes(StandardCharsets.UTF_8).length]
+                    )
+                }
+            }
+        }
+
+        if (!chunk.isEmpty()) {
+            emit([
+                type: 'task_chunk',
+                build_path: buildPath,
+                project_path: projectPath,
+                chunk_index: chunkIndex,
+                names: chunk,
+            ])
+            return chunkIndex
+        }
+        return 0
+    }
+
+    @TaskAction
+    void emitCompletion() {
+        String nonceValue = nonce.get()
+        if (!(nonceValue ==~ /[a-f0-9]{32}/)) {
+            throw new GradleException('Android Workbench [invalid_nonce]: discovery nonce is missing or invalid')
+        }
+
+        String buildPath = buildPathValue.get()
+        Set<String> applicationProjectPaths = applicationProjects.get().toSet()
+        Map<String, List<String>> namesByProject = taskNamesByProject.get()
+        long totalTaskCount = 0
+
+        namesByProject.keySet().sort().each { String projectPath ->
+            List<String> names = []
+            namesByProject.get(projectPath).each { String taskName ->
+                if (isExecutableTaskName(taskName) && !isInternalTask(projectPath, taskName, applicationProjectPaths)) {
+                    if (!isTransportableTaskName(buildPath, projectPath, taskName)) {
+                        int qualifiedIdBytes = AndroidWorkbenchProjectModelTask.qualify(
+                            buildPath,
+                            projectPath,
+                            taskName
+                        ).getBytes(StandardCharsets.UTF_8).length
+                        failTaskDiscovery(
+                            'untransportable_task_name',
+                            "task ${projectPath} has a name that cannot be represented safely",
+                            [build_path: buildPath, project_path: projectPath, qualified_id_utf8_bytes: qualifiedIdBytes]
+                        )
+                    }
+                    names.add(taskName)
+                }
+            }
+            names = names.toSet().sort()
+            int chunkCount = emitTaskChunks(buildPath, projectPath, names)
+            emit([
+                type: 'task_project_complete',
+                build_path: buildPath,
+                project_path: projectPath,
+                chunk_count: chunkCount,
+                task_count: names.size(),
+            ])
+            totalTaskCount += names.size()
+            if (totalTaskCount > MAX_TASKS) {
+                failTaskDiscovery(
+                    'task_limit',
+                    'Gradle discovery produced too many tasks',
+                    [build_path: buildPath, task_count: totalTaskCount]
+                )
+            }
+        }
+
+        emit([
+            type: 'build_complete',
+            build_path: buildPath,
+            build_root: buildRootValue.get(),
+            application_projects: applicationProjectPaths.sort(),
+            included_build_roots: includedBuildRoots.get().toSet().sort(),
+            project_count: namesByProject.size(),
+            task_count: totalTaskCount,
+        ])
+        if (invocationRoot.get()) {
+            emit([type: 'tree_complete', build_path: buildPathValue.get()])
+        }
+    }
+}
+
+String canonicalPath(File path) {
+    try {
+        return path.canonicalPath
+    } catch (IOException exception) {
+        throw new GradleException("Android Workbench [path_error]: cannot canonicalize ${path}", exception)
+    }
+}
+
+void failDiscovery(String code, String message, Map<String, ?> details = [:]) {
+    String nonce = System.getenv(ANDROID_WORKBENCH_NONCE_ENV) ?: ''
+    Map<String, ?> record = [schema: 1, nonce: nonce, type: 'error', code: code, message: message, details: details]
+    println(ANDROID_WORKBENCH_MARKER + JsonOutput.toJson(record))
+    throw new GradleException("Android Workbench [${code}]: ${message}")
+}
+
+String legacyBuildPath(org.gradle.api.invocation.Gradle current) {
+    org.gradle.api.invocation.Gradle parent = current.parent
+    if (parent == null) {
+        return ':'
+    }
+
+    String currentRoot = canonicalPath(current.rootProject.rootDir)
+    def matches = parent.includedBuilds.findAll { included ->
+        canonicalPath(included.projectDir) == currentRoot
+    }
+    if (matches.size() != 1) {
+        failDiscovery(
+            'unsupported_build_identity',
+            "cannot identify included build at ${currentRoot} on Gradle ${current.gradleVersion}",
+            [matching_includes: matches.collect { it.name }.sort()]
+        )
+    }
+
+    String parentPath = legacyBuildPath(parent)
+    return parentPath == ':' ? ':' + matches[0].name : parentPath + ':' + matches[0].name
+}
+
+String buildPathFor(org.gradle.api.invocation.Gradle current) {
+    // Gradle 9.1 added the public buildPath API. Older supported wrappers use a
+    // canonical parent/include relationship instead of Gradle internals.
+    if (GradleVersion.current() >= GradleVersion.version('9.1')) {
+        return current.buildPath
+    }
+    return legacyBuildPath(current)
+}
+
+gradle.rootProject { rootProject ->
+    if (rootProject.tasks.names.contains(ANDROID_WORKBENCH_BUILD_TASK)) {
+        failDiscovery('task_collision', "task :${ANDROID_WORKBENCH_BUILD_TASK} already exists")
+    }
+
+    String buildPath = buildPathFor(gradle)
+    String buildRoot = canonicalPath(rootProject.rootDir)
+    def nonceProvider = rootProject.providers.environmentVariable(ANDROID_WORKBENCH_NONCE_ENV)
+    def buildTask = rootProject.tasks.register(ANDROID_WORKBENCH_BUILD_TASK, AndroidWorkbenchBuildModelTask) {
+        group = null
+        description = 'Emits the Android Workbench discovery model'
+        nonce.set(nonceProvider)
+        buildPathValue.set(buildPath)
+        buildRootValue.set(buildRoot)
+        applicationProjects.convention([])
+        taskNamesByProject.convention([:])
+        includedBuildRoots.convention([])
+        invocationRoot.set(gradle.parent == null)
+    }
+
+    gradle.includedBuilds.each { included ->
+        String includedRoot = canonicalPath(included.projectDir)
+        buildTask.configure {
+            includedBuildRoots.add(includedRoot)
+            dependsOn(included.task(':' + ANDROID_WORKBENCH_BUILD_TASK))
+        }
+    }
+}
+
+gradle.allprojects { candidateProject ->
+    def buildTask = candidateProject.rootProject.tasks.named(
+        ANDROID_WORKBENCH_BUILD_TASK,
+        AndroidWorkbenchBuildModelTask
+    )
+    buildTask.configure {
+        taskNamesByProject.put(candidateProject.path, candidateProject.providers.provider {
+            candidateProject.tasks.names.toList().sort()
+        })
+    }
+
+    candidateProject.pluginManager.withPlugin('com.android.application') {
+        if (candidateProject.tasks.names.contains(ANDROID_WORKBENCH_PROJECT_TASK)) {
+            failDiscovery(
+                'task_collision',
+                "task ${candidateProject.path}:${ANDROID_WORKBENCH_PROJECT_TASK} already exists"
+            )
+        }
+
+        def androidComponents = candidateProject.extensions.findByName('androidComponents')
+        if (androidComponents == null) {
+            failDiscovery(
+                'unsupported_android_plugin',
+                "${candidateProject.path} applies com.android.application without androidComponents"
+            )
+        }
+
+        String buildPath = buildPathFor(candidateProject.gradle)
+        def nonceProvider = candidateProject.providers.environmentVariable(ANDROID_WORKBENCH_NONCE_ENV)
+        def modelTask = candidateProject.tasks.register(ANDROID_WORKBENCH_PROJECT_TASK, AndroidWorkbenchProjectModelTask) {
+            group = null
+            description = 'Emits Android application variants for Android Workbench'
+            nonce.set(nonceProvider)
+            buildPathValue.set(buildPath)
+            buildRootValue.set(canonicalPath(candidateProject.rootDir))
+            projectPathValue.set(candidateProject.path)
+            projectDirValue.set(canonicalPath(candidateProject.projectDir))
+            applicationIds.convention([:])
+            assembleTaskNames.convention([:])
+            installTaskNames.convention([:])
+        }
+
+        Map<String, Map<String, String>> expectedTasks = [:]
+        androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+            if (!variant.hasProperty('applicationId')) {
+                failDiscovery(
+                    'unsupported_android_plugin',
+                    "variant ${candidateProject.path}:${variant.name} has no public applicationId provider"
+                )
+            }
+
+            String variantName = variant.name
+            String suffix = variantName.substring(0, 1).toUpperCase(Locale.ROOT) + variantName.substring(1)
+            String assembleName = 'assemble' + suffix
+            String installName = 'install' + suffix
+            expectedTasks[variantName] = [assemble: assembleName, install: installName]
+            modelTask.configure {
+                // The Provider overload preserves AGP's laziness. applicationId is
+                // resolved only as an execution-time task input.
+                applicationIds.put(variantName, variant.applicationId)
+                assembleTaskNames.put(variantName, assembleName)
+            }
+        }
+
+        candidateProject.afterEvaluate {
+            Set<String> registeredTasks = candidateProject.tasks.names
+            expectedTasks.each { String variantName, Map<String, String> names ->
+                if (!registeredTasks.contains(names.assemble)) {
+                    failDiscovery(
+                        'unsupported_variant_tasks',
+                        "${candidateProject.path}:${variantName} is missing its expected assemble task",
+                        [missing_tasks: [names.assemble]]
+                    )
+                }
+                if (registeredTasks.contains(names.install)) {
+                    modelTask.configure { installTaskNames.put(variantName, names.install) }
+                }
+            }
+        }
+
+        buildTask.configure {
+            applicationProjects.add(candidateProject.path)
+            dependsOn(modelTask)
+        }
+    }
+}

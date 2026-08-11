@@ -1,0 +1,154 @@
+# Android Workbench
+
+Android Workbench is a focused Neovim workbench for everyday Android
+development. It discovers Android application variants through a project's own
+Gradle wrapper, remembers an application, variant, and device per project, and
+coordinates build, install, launch, stop, emulator, Gradle-task, build-problem,
+and Logcat workflows.
+
+> [!IMPORTANT]
+> This is a pre-release development repository, not a published plugin release.
+> The source is visible, but there is intentionally no license yet; repository
+> visibility does not grant permission to copy, modify, or redistribute it.
+> A licensed public release remains blocked on an explicit owner-approved
+> license and provenance review, the runtime gates in
+> [the roadmap](docs/roadmap.md), and standalone release verification.
+
+## Design boundary
+
+Workbench owns Android and Gradle orchestration. It does not own Kotlin or Java
+language tooling, formatting, test frameworks, DAP, autosave, file watching,
+KMP/iOS, SDK installation, or general editor behavior.
+
+The plugin provides native defaults and explicit adapter ports. Telescope and
+Overseer are optional integrations, not required dependencies. Workbench does
+not define keymaps, WhichKey entries, global picker overrides, or automatic
+Trouble behavior. A consuming Neovim configuration chooses those policies.
+
+The durable ownership and lifecycle contracts are documented in
+[the architecture guide](docs/architecture/android-workbench.md). The reasons
+behind the current shape live in [the decision record](docs/decisions.md).
+
+## Current capabilities
+
+- Trusted, bounded Gradle discovery for Android application variants and
+  registered task names, including composite-build identity.
+- Root-isolated application, variant, physical-device, and AVD selection.
+- Exact Build, Run, application Stop, and arbitrary registered Gradle-task
+  execution without shell-composed commands.
+- AVD discovery plus bounded emulator start/readiness and exact emulator stop.
+- App-scoped native Logcat with pause, follow, filtering, clearing, and source
+  navigation.
+- Bounded Kotlin, Java, Android Lint, AAPT, and AGP problem parsing with a
+  root-owned quickfix sink and an optional diagnostic projection.
+- A configuration-only `setup()` and a lazy `:Android` command surface.
+
+This list describes implemented breadth, not a public stability promise. The
+pre-release API and support boundary still need to be deliberately frozen.
+
+## Requirements and current support evidence
+
+The current development floor is Neovim 0.12.4 on macOS/Unix-like systems.
+Individual workflows additionally require:
+
+- Command, help, and health require Neovim 0.12.4.
+- Discovery, Build, Run, and Gradle tasks require an executable Unix `gradlew`,
+  the project's compatible JDK, and its normal Android/Gradle inputs.
+- Device actions and Logcat require `adb` on `PATH`, or explicitly injected
+  services.
+- AVD lifecycle requires Android Emulator and ADB on `PATH`, or an injected
+  semantic emulator service.
+- Telescope selection requires Telescope only when that adapter is selected.
+- Overseer execution requires Overseer 2.x only when that adapter is selected.
+
+Windows wrapper support and broad historical Gradle/AGP compatibility are not
+currently claimed. The recorded development floor is Gradle 7.3.3 with AGP
+7.1.3, but replayable compatibility gates are still required before publishing
+that as a release guarantee.
+
+## Development installation
+
+A Neovim 0.12 consumer using `vim.pack` can add the repository during startup
+and configure the native defaults:
+
+```lua
+vim.pack.add {
+  'https://github.com/gvanderclay/android-workbench.nvim',
+}
+
+require('android_workbench').setup {}
+```
+
+`setup()` only validates and stores configuration. It does not resolve a
+project, prompt for trust, create a session, query ADB, enumerate AVDs, or run
+Gradle. The first action constructs the application lazily.
+
+A consuming configuration may compose optional adapters explicitly without
+changing Workbench's defaults:
+
+```lua
+require('android_workbench').setup {
+  ports = {
+    picker = require('android_workbench.integrations.telescope').new(),
+    problems = require('android_workbench.integrations.diagnostics').new {
+      sink = require('android_workbench.integrations.quickfix').new {
+        open_on_failure = true,
+        close_on_success = true,
+      },
+    },
+    runner = require('android_workbench.integrations.overseer').new(),
+  },
+}
+```
+
+That snippet is a consumer recipe, not package policy. Mappings and provider
+presentation belong in the consuming configuration.
+
+## Commands and help
+
+Run `:Android` for the contextual action menu. The command also accepts:
+
+- `status` and `refresh`
+- `target app`, `target variant`, and `target device`
+- `emulator start` and `emulator stop`
+- `build`, `run`, `stop`, and `gradle`
+- `logcat`, `logcat stop`, and `cancel`
+
+Use `:help android-workbench` for the complete command and configuration
+reference, and `:checkhealth android_workbench` for local prerequisites.
+
+Gradle discovery and executable Gradle actions run project-controlled code.
+Workbench prompts through Neovim's trust mechanism immediately before each
+such execution. Device, emulator, application-stop, and Logcat operations do
+not evaluate Gradle build logic.
+
+## Development
+
+Run the complete standalone verification from the repository root:
+
+```sh
+make test
+```
+
+The focused lanes are:
+
+```sh
+make test-contract
+make test-package
+make test-format
+```
+
+The contract lane runs the isolated behavioral suites. The package lane checks
+clean startup, command and setup laziness, help, health, and the bundled Gradle
+asset without loading another user configuration. See
+[the architecture guide](docs/architecture/android-workbench.md) for design
+constraints and [the roadmap](docs/roadmap.md) for work that remains before a
+public tag.
+
+## Release status
+
+No release or semantic-version compatibility is promised yet. `v0.1.0` is
+gated on the roadmap's runtime containment, public-default, licensing,
+standalone CI, real Gradle/AGP, optional-adapter, and outcome-based daily-use
+checks. Feature count, Windows support, and broad compatibility work are not
+substitutes for those gates.
