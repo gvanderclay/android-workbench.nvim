@@ -54,11 +54,11 @@ shutdown is the stronger irreversible boundary.
 
 ### R1.2 Public result ownership
 
-- [ ] Return owned target, device, status, and error DTO members from facade
+- [x] Return owned target, device, status, and error DTO members from facade
   workflows rather than Session-retained tables.
-- [ ] Preserve intentionally identity-bearing handles without blindly deep
+- [x] Preserve intentionally identity-bearing handles without blindly deep
   copying lifecycle objects.
-- [ ] Prove mutating any earlier public result cannot change later target
+- [x] Prove mutating any earlier public result cannot change later target
   resolution, Gradle argv, state, or device identity.
 
 ### R1.3 Complete discovery normalization

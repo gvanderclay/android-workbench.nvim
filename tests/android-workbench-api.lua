@@ -56,6 +56,7 @@ local emulator_start_cancellations = 0
 local hold_emulator_start = false
 local pending_emulator_start
 local logcat_calls = {}
+local logcat_handles = {}
 local logcat_shows = 0
 local logcat_stops = 0
 local current_avd_name = 'Pixel_8_API_35'
@@ -306,6 +307,7 @@ local ports = {
         vim.schedule(function() request.on_exit { status = 'stopped' } end)
         return true
       end
+      logcat_handles[#logcat_handles + 1] = handle
       return handle
     end,
   },
@@ -948,6 +950,9 @@ local ok, unexpected = xpcall(function()
   expect('variant selection succeeds', selected_variant.err, nil)
   expect('variant selection persists', state_by_root[root_one].variant, 'debug')
   expect('cached target selection avoids rediscovery', discovery_calls[root_one], 1)
+  selected_variant.status.selection.app.project_path = ':caller-mutated'
+  expect('public status cannot mutate persisted target identity', state_by_root[root_one].app.project_path, ':app')
+  expect('public status cannot mutate later target identity', assert(android.status { root = root_one }).selection.app.project_path, ':app')
 
   local built
   local stale_checks_before_build = stale_checks_by_root[root_one] or 0
@@ -966,6 +971,18 @@ local ok, unexpected = xpcall(function()
     truncated = false,
   })
 
+  local assemble_task = built.result.target.assemble_task
+  built.result.target.assemble_task = ':app:callerMutated'
+  local rebuilt
+  android.build({ root = root_one }, function(err, result) rebuilt = { err = err, result = result } end)
+  expect_true('build after public target mutation completes', vim.wait(1000, function() return rebuilt ~= nil end, 10))
+  expect('build after public target mutation succeeds', rebuilt.err, nil)
+  local rebuilt_argv = runner_calls[#runner_calls].argv[3]
+  local rebuilt_target_task = rebuilt.result and rebuilt.result.target.assemble_task
+  built.result.target.assemble_task = assemble_task
+  expect('public target cannot mutate later Gradle argv', rebuilt_argv, ':app:assembleDebug')
+  expect('public target cannot mutate later target resolution', rebuilt_target_task, ':app:assembleDebug')
+
   local ran
   local stale_checks_before_run = stale_checks_by_root[root_one] or 0
   android.run({ root = root_one }, function(err, result) ran = { err = err, result = result } end)
@@ -975,18 +992,27 @@ local ok, unexpected = xpcall(function()
   expect('first run remembers the emulator AVD identity', state_by_root[root_one].device.avd_name, current_avd_name)
   expect('run uses selected install task', runner_calls[#runner_calls].argv[3], ':app:installDebug')
   expect('run scopes Gradle install to selected device', runner_calls[#runner_calls].env.ANDROID_SERIAL, 'emulator-5554')
-  expect('run reauthorizes immediately before Gradle execution', trust_calls[root_one], 3)
+  expect('run reauthorizes immediately before Gradle execution', trust_calls[root_one], 4)
   expect('run performs one cached metadata freshness check', stale_checks_by_root[root_one], stale_checks_before_run + 1)
   expect('run launches exact selected package', adb_calls[#adb_calls].application_id, 'example.app.debug')
   expect('configured Run opens Logcat once', #logcat_calls, 1)
   expect('automatic Logcat preserves source focus', logcat_calls[1].focus, false)
-  expect('successful install publishes a root-scoped clear batch', problem_batches[2], {
+  expect('successful install publishes a root-scoped clear batch', problem_batches[3], {
     root = root_one,
     kind = 'run',
     name = 'Android run :app · debug',
     status = 'success',
     items = {},
     truncated = false,
+  })
+
+  ran.result.device.serial = 'caller-mutated'
+  ran.result.device.avd_name = 'Caller_Mutated'
+  local status_after_device_mutation = assert(android.status { root = root_one })
+  expect('public device cannot mutate persisted device identity', state_by_root[root_one].device.serial, 'emulator-5554')
+  expect('public device cannot mutate later device identity', status_after_device_mutation.selection.device, {
+    serial = 'emulator-5554',
+    avd_name = current_avd_name,
   })
 
   local logcat_opened
@@ -1000,7 +1026,8 @@ local ok, unexpected = xpcall(function()
   expect('lazy adb resolver runs only on demand', adb_resolution_calls, 1)
   expect('logcat uses selected applicationId', logcat_calls[1].application_id, 'example.app.debug')
   expect('logcat uses remembered device', logcat_calls[1].device_serial, 'emulator-5554')
-  expect('logcat does not reauthorize project execution', trust_calls[root_one], 3)
+  expect('logcat does not reauthorize project execution', trust_calls[root_one], 4)
+  expect_true('public logcat result preserves handle identity', rawequal(logcat_opened.result.handle, logcat_handles[1]))
   expect('status exposes running logcat independently', assert(android.status { root = root_one }).logcat, 'running')
   expect('existing logcat shows its view', logcat_shows, 1)
 
@@ -1009,8 +1036,9 @@ local ok, unexpected = xpcall(function()
   expect_true('stop completes', vim.wait(1000, function() return stopped ~= nil end, 10))
   expect('stop succeeds', stopped.err, nil)
   expect('stop validates remembered device', adb_calls[#adb_calls - 1].kind, 'validate')
+  expect('stop preserves remembered device identity after result mutation', adb_calls[#adb_calls - 1].serial, 'emulator-5554')
   expect('stop targets exact selected package', adb_calls[#adb_calls].application_id, 'example.app.debug')
-  expect('stop does not authorize project execution', trust_calls[root_one], 3)
+  expect('stop does not authorize project execution', trust_calls[root_one], 4)
 
   local batches_before_launch_failure = #problem_batches
   next_launch_error = { code = 'launch_failed', message = 'ADB could not launch the installed application' }
@@ -1600,6 +1628,13 @@ local ok, unexpected = xpcall(function()
   expect_true('denied refresh completes', vim.wait(1000, function() return denied ~= nil end, 10))
   expect('denied refresh returns trust error', denied.err.code, 'project_not_trusted')
   expect('denied refresh never starts Gradle', discovery_calls[root_two], nil)
+  denied.err.message = 'caller-mutated callback error'
+  expect('public callback error cannot mutate retained status error', assert(android.status { root = root_two }).error.message, 'not trusted')
+  denied.err.message = 'not trusted'
+  local denied_status = assert(android.status { root = root_two })
+  denied_status.error.message = 'caller-mutated status error'
+  expect('public status error cannot mutate later status error', assert(android.status { root = root_two }).error.message, 'not trusted')
+  denied_status.error.message = 'not trusted'
 
   local batches_before_denied_build = #problem_batches
   local denied_build

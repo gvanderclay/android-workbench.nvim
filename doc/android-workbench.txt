@@ -96,7 +96,9 @@ when their ports are omitted.
 General adapter entry points (`start`, `select`, `authorize`, `load`, `save`,
 `discover`, `emit`, and `publish`) are called as plain functions. The `adb` and
 `emulator` services and returned operation handles use method-style calls with
-`self`.
+`self`. Facade callbacks and status calls return owned mutable result and error
+data. Changing an earlier result cannot change retained selection, a later
+task, or device identity. Operation and Logcat handles retain their identity.
 
 The synchronous problem-sink contract is: >lua
 

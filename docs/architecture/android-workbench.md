@@ -53,6 +53,10 @@ pre-1.0 result and error surface is still a roadmap decision. Lua modules are
 not public merely because they can be required; `App`, `Session`, root/device
 services, task operations, and model helpers remain internal.
 
+The facade owns the mutable DTO members it returns through status, synchronous
+errors, and async callbacks. It copies those members at the public boundary
+while preserving operation and Logcat handle identity.
+
 Root-aware status and action-menu requests may resolve a wrapper and read
 private selection state. They still must not authorize project code, discover a
 model, query ADB, enumerate AVDs, or start a task.

@@ -39,6 +39,15 @@ local function app()
   return instance
 end
 
+local function copy_public_dto(value)
+  if type(value) ~= 'table' then return value end
+  local copy = {}
+  for key, member in pairs(value) do
+    copy[key] = key == 'handle' and member or vim.deepcopy(member)
+  end
+  return copy
+end
+
 ---@param event { level?: 'info'|'warn'|'error', title?: string, message: string, code?: string }
 function M._notify(event)
   event = {
@@ -83,7 +92,10 @@ end
 ---@param opts? table
 ---@return table? status
 ---@return table|string? error
-function M.status(opts) return app():status(context(opts)) end
+function M.status(opts)
+  local status, err = app():status(context(opts))
+  return copy_public_dto(status), copy_public_dto(err)
+end
 
 ---@param opts? table
 ---@return table? status
@@ -135,7 +147,7 @@ local function callback_or_noop(callback)
     return function() end
   end
   if type(callback) ~= 'function' then error('android_workbench callback must be a function', 3) end
-  return callback
+  return function(err, result) callback(copy_public_dto(err), copy_public_dto(result)) end
 end
 
 ---@param opts? table
@@ -196,6 +208,7 @@ function M.logcat(opts, callback) return app():open_logcat(context(opts), callba
 ---@return table|string? error
 function M.stop_logcat(opts)
   local stopped, err = app():stop_logcat(context(opts))
+  err = copy_public_dto(err)
   if not stopped then M._notify {
     level = 'error',
     code = 'logcat_stop_failed',
@@ -209,6 +222,7 @@ end
 ---@return table|string? error
 function M.cancel(opts)
   local cancelled, err = app():cancel(context(opts))
+  err = copy_public_dto(err)
   if not cancelled then M._notify {
     level = 'error',
     code = 'cancel_failed',
