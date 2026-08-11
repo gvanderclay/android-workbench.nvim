@@ -1624,6 +1624,47 @@ local ok, unexpected = xpcall(function()
   expect('setup is frozen after first action', valid, false)
   expect_true('late setup error is actionable', tostring(config_error):find('before the first Android action', 1, true))
 
+  runner_cancel_mode = 'reject'
+  hold_runner = true
+  pending_runner = nil
+  local abandoned_run_callbacks = 0
+  android.run({ root = root_one }, function() abandoned_run_callbacks = abandoned_run_callbacks + 1 end)
+  expect_true('shutdown-refusal Run reaches runner', vim.wait(1000, function() return pending_runner ~= nil end, 10))
+  local abandoned_runner_terminal = pending_runner
+  local runner_cancellations_before_shutdown = runner_cancellations
+  android.shutdown()
+  expect('shutdown attempts refused runner cancellation once', runner_cancellations, runner_cancellations_before_shutdown + 1)
+
+  runner_cancel_mode = 'accept'
+  pending_runner = nil
+  local replacement_build_callbacks = 0
+  local replacement_build
+  android.build({ root = root_one }, function(err, result)
+    replacement_build_callbacks = replacement_build_callbacks + 1
+    replacement_build = { err = err, result = result }
+  end)
+  expect_true('replacement App reaches its own runner', vim.wait(1000, function() return pending_runner ~= nil end, 10))
+  local replacement_runner_terminal = pending_runner
+  local adb_calls_before_late_success = #adb_calls
+  local logcats_before_late_success = #logcat_calls
+  local batches_before_late_success = #problem_batches
+  local notifications_before_late_success = #notifications
+
+  abandoned_runner_terminal(nil, { status = 'success', code = 0 })
+  vim.wait(100, function() return abandoned_run_callbacks > 0 end, 10)
+  expect('shutdown suppresses late Run ADB work', #adb_calls, adb_calls_before_late_success)
+  expect('shutdown suppresses late Run Logcat', #logcat_calls, logcats_before_late_success)
+  expect('shutdown suppresses late Run problem publication', #problem_batches, batches_before_late_success)
+  expect('shutdown suppresses late Run notifications', #notifications, notifications_before_late_success)
+  expect('shutdown suppresses late Run public callback', abandoned_run_callbacks, 0)
+  expect('late old Run leaves replacement App operation active', assert(android.status { root = root_one }).operation, 'build')
+
+  replacement_runner_terminal(nil, { status = 'success', code = 0 })
+  expect_true('replacement App operation completes', vim.wait(1000, function() return replacement_build ~= nil end, 10))
+  expect('replacement App operation succeeds', replacement_build.err, nil)
+  expect('replacement App operation completes once', replacement_build_callbacks, 1)
+  hold_runner = false
+
   hold_picker = true
   pending_picker = nil
   local shutdown_palette = android.open_actions { root = root_one }

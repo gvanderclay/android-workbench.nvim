@@ -41,12 +41,12 @@ release candidate.
 
 ### R1.1 Irreversible shutdown
 
-- [ ] Add a private shutdown-only abandon transition spanning `App` and
+- [x] Add a private shutdown-only abandon transition spanning `App` and
   execution orchestration.
-- [ ] If a child refuses cancellation or cannot be cancelled, allow it to
+- [x] If a child refuses cancellation or cannot be cancelled, allow it to
   finish privately while suppressing late ADB, Logcat, problem, notification,
   public-callback, and replacement-App side effects.
-- [ ] Cover delayed cancellation refusal, a late successful Run terminal, and a
+- [x] Cover delayed cancellation refusal, a late successful Run terminal, and a
   fresh replacement App in one focused regression matrix.
 
 Ordinary user cancellation may remain active when a child refuses to stop;

@@ -66,6 +66,14 @@ local function cancel_handle(handle)
   return true
 end
 
+local function abandon_handle(handle)
+  if type(handle) == 'table' and type(handle._abandon) == 'function' then
+    pcall(handle._abandon, handle)
+    return
+  end
+  cancel_handle(handle)
+end
+
 local function raw_string(value, field)
   if type(value) ~= 'table' then return nil end
   local result = rawget(value, field)
@@ -171,6 +179,18 @@ local function new_operation(callback)
       operation.cancelled = false
       return false
     end
+    return true
+  end
+
+  function operation:_abandon()
+    if self.done then return false end
+    self.done = true
+    self.cancelled = true
+    self.generation = self.generation + 1
+    local child = self.child
+    self.child = nil
+    self.child_active = false
+    abandon_handle(child)
     return true
   end
 
@@ -1234,7 +1254,7 @@ function App:shutdown()
   self.active = {}
   self.logcat_starts = {}
   for operation in pairs(operations) do
-    pcall(operation.cancel)
+    pcall(operation._abandon, operation)
   end
   local logcats = self.logcats
   self.logcats = {}

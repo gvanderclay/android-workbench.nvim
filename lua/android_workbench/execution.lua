@@ -26,6 +26,14 @@ local function cancel_handle(handle)
   return true
 end
 
+local function abandon_handle(handle)
+  if type(handle) == 'table' and type(handle._abandon) == 'function' then
+    pcall(handle._abandon, handle)
+    return
+  end
+  cancel_handle(handle)
+end
+
 local function operation(callback)
   local current = {
     child = nil,
@@ -113,6 +121,17 @@ local function operation(callback)
       current.cancelling = false
       return false
     end
+    return true
+  end
+
+  function current:_abandon()
+    if self.done then return false end
+    self.done = true
+    self.generation = self.generation + 1
+    local child = self.child
+    self.child = nil
+    self.child_active = false
+    abandon_handle(child)
     return true
   end
 

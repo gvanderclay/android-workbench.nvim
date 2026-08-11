@@ -99,9 +99,9 @@ emulator-stop workflow is active per root. Logcat has a separate root-keyed
 lifecycle and may survive task completion.
 
 Public shutdown closes and discards the current instance. A later action may
-construct a fresh `App`. Shutdown is required to revoke the old generation even
-when an adapter refuses cancellation; this containment work remains an explicit
-pre-release gate.
+construct a fresh `App`. Shutdown revokes the old generation even when an
+adapter refuses cancellation. The child may finish privately, but its terminal
+cannot resume App work or affect the replacement instance.
 
 ### Session
 
@@ -195,7 +195,8 @@ explicit in public documentation.
 
 `execution.lua` translates a resolved Android or arbitrary Gradle action into
 an exact neutral task request and, where required, an ADB follow-up. It does not
-own task presentation.
+own task presentation. Its private abandon transition prevents a late task
+terminal from advancing into ADB after App shutdown.
 
 `task_operation.lua` is the provider-neutral primitive shared by native and
 Overseer runners. It owns request validation, bounded capture and pending
