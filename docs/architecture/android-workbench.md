@@ -245,8 +245,8 @@ controls, filtering, and source navigation.
 The stream survives application process restarts by resolving the selected
 application UID. Replacing a root's stream requires the old presenter to accept
 stop; a late old exit must not clear a replacement. Logical-line and retained
-record bytes, not only record count, must be bounded; oversized-line recovery is
-a pre-release hardening gate.
+record bytes are bounded in addition to record count. An oversized logical line
+is discarded through its next newline before parsing resumes.
 
 ### Command, actions, and integrations
 

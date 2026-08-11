@@ -147,6 +147,9 @@ vim.api.nvim_create_autocmd('FileType', {
 })
 
 local ok, unexpected = xpcall(function()
+  expect_false('zero logical-line byte bound is rejected', pcall(Native.new, { max_line_bytes = 0 }))
+  expect_false('zero retained-record byte bound is rejected', pcall(Native.new, { max_retained_bytes = 0 }))
+
   local parsed = Model.parse_line '2026-08-10 12:34:56.789 123 456 W ExampleTag: warning payload'
   expect('threadtime timestamp is parsed', parsed.timestamp, '2026-08-10 12:34:56.789')
   expect('threadtime process identity is parsed', { parsed.pid, parsed.tid }, { 123, 456 })
@@ -393,6 +396,55 @@ local ok, unexpected = xpcall(function()
   output { stream = 'stdout', data = 'late output\n' }
   expect('late stream completion cannot finish twice', #exits, 1)
   expect('completed stream cannot stop again', handle:stop(), false)
+
+  local byte_runner = fake_runner()
+  local byte_exits = {}
+  local byte_handle = Native.new({
+    runner = byte_runner.adapter,
+    schedule = immediate,
+    defer_fn = defer,
+    max_records = 10,
+    max_line_bytes = 64,
+    max_retained_bytes = 90,
+  }).start(request(function(result) byte_exits[#byte_exits + 1] = result end))
+  local byte_bufnr = byte_handle:status().bufnr
+  buffers_to_delete[#buffers_to_delete + 1] = byte_bufnr
+  byte_runner.calls[1].callback(nil, { status = 'success', stdout = 'package:com.example.app uid:30301\n' })
+  local byte_output = byte_runner.calls[2].request.on_output
+  local byte_line_one = '2026-08-10 12:10:00.001 101 301 I Byte: one'
+  local byte_line_two = '2026-08-10 12:10:00.002 101 301 I Byte: two'
+  local byte_line_three = '2026-08-10 12:10:00.003 101 301 I Byte: three'
+  byte_output { stream = 'stdout', data = string.rep('x', 65) .. '\n' .. byte_line_one .. '\n' }
+  expect('oversized complete line is discarded', byte_handle:status().records, 1)
+  expect_true('stream recovers after an oversized complete line', contains_line(buffer_lines(byte_bufnr), byte_line_one))
+  expect_false('oversized complete line is never retained', contains_line(buffer_lines(byte_bufnr), string.rep('x', 65)))
+
+  byte_output { stream = 'stdout', data = string.rep('y', 40) }
+  byte_output { stream = 'stdout', data = string.rep('y', 25) }
+  expect('oversized split line is not retained before its newline', byte_handle:status().records, 1)
+  byte_output { stream = 'stdout', data = 'discarded suffix\n' .. byte_line_two .. '\n' }
+  expect('oversized split line is discarded through its newline', byte_handle:status().records, 2)
+  expect_true('stream recovers after an oversized split line', contains_line(buffer_lines(byte_bufnr), byte_line_two))
+  expect_false('oversized split line cannot manufacture a partial record', contains_line(buffer_lines(byte_bufnr), string.rep('y', 65) .. 'discarded suffix'))
+
+  byte_output { stream = 'stdout', data = byte_line_three .. '\n' }
+  expect('retained byte bound evicts the oldest complete record', byte_handle:status().records, 2)
+  expect_false('retained byte bound removes the oldest line', contains_line(buffer_lines(byte_bufnr), byte_line_one))
+  expect_true('retained byte bound keeps the newer line', contains_line(buffer_lines(byte_bufnr), byte_line_two))
+  expect_true('retained byte bound keeps the newest line', contains_line(buffer_lines(byte_bufnr), byte_line_three))
+
+  press(byte_bufnr, 'c')
+  byte_output { stream = 'stdout', data = string.rep('q', 65) .. '\r' }
+  byte_output { stream = 'stdout', data = '\n' .. byte_line_one .. '\n' }
+  expect('split CRLF after an oversized line does not create an empty record', byte_handle:status().records, 1)
+  expect_true('split CRLF recovery retains the next record', contains_line(buffer_lines(byte_bufnr), byte_line_one))
+
+  byte_output { stream = 'stdout', data = string.rep('z', 65) }
+  expect('unterminated oversized line is not retained', byte_handle:status().records, 1)
+  expect('byte-bounded stream stop succeeds', byte_handle:stop(), true)
+  byte_runner.calls[2].callback(nil, { status = 'cancelled' })
+  expect('teardown does not turn a discarded oversized line into a record', byte_handle:status().records, 1)
+  expect('byte-bounded stream exits once', byte_exits[1] and byte_exits[1].status, 'stopped')
 
   local synchronous_calls = {}
   local synchronous_runner = {

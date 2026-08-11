@@ -180,6 +180,8 @@ before injection: >lua
 
   local logcat = require('android_workbench.logcat.native').new({
     max_records = 20000,
+    max_line_bytes = 64 * 1024,
+    max_retained_bytes = 4 * 1024 * 1024,
     height = 18,
   })
   require('android_workbench').setup({
@@ -190,6 +192,12 @@ The port has one `start(request)` method and returns a handle with `show()` and
 `stop()`. The request contains neutral project, application, and device data,
 plus an optional lazy `resolve_adb()` function. Custom presenters can ignore
 the resolver and do not receive native-buffer details.
+
+The native defaults retain at most 10,000 records and 4 MiB of raw record text.
+A logical line is limited to 64 KiB. A longer line is discarded through its
+next newline before parsing resumes, including when it spans output chunks.
+The byte limits measure Lua string bytes. Oldest records are evicted first when
+either history limit is exceeded.
 
 The default Gradle provider can be constructed with a project-specific
 configuration-cache policy or timeout: >lua
@@ -339,8 +347,8 @@ Malformed, partial, aliased, or identity-inconsistent results are rejected.
 :Android logcat stop
         Stop Logcat for the current project without cancelling Build or Run.
 
-The native Logcat buffer retains a bounded local history. Its buffer-local
-controls are:
+The native Logcat buffer retains a count- and byte-bounded local history. Its
+buffer-local controls are:
 
         p       Pause or resume rendering; capture remains bounded and active.
         f       Toggle following the newest visible line.

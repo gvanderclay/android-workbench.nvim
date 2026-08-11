@@ -75,11 +75,11 @@ Workbench already executes direct argv.
 
 ### R1.4 Logcat byte bounds
 
-- [ ] Bound native Logcat logical-line and retained-record bytes in addition to
+- [x] Bound native Logcat logical-line and retained-record bytes in addition to
   record count.
-- [ ] Discard through the next newline after an oversized record and
+- [x] Discard through the next newline after an oversized record and
   resynchronize without manufacturing a partial record.
-- [ ] Cover oversized single chunks, split chunks, recovery, teardown, and
+- [x] Cover oversized single chunks, split chunks, recovery, teardown, and
   bounded retained state.
 
 ## R2 — Effective native defaults and public boundary

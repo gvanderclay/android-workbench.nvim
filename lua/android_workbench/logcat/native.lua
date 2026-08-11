@@ -5,7 +5,9 @@ local M = {}
 
 local DEFAULT_HEIGHT = 15
 local DEFAULT_INITIAL_LINES = 200
+local DEFAULT_MAX_LINE_BYTES = 64 * 1024
 local DEFAULT_MAX_RECORDS = 10000
+local DEFAULT_MAX_RETAINED_BYTES = 4 * 1024 * 1024
 local DEFAULT_UID_TIMEOUT_MS = 30000
 local HEADER_LINES = 4
 local MAX_SOURCE_ENTRIES = 50000
@@ -145,6 +147,12 @@ function M.new(opts)
   if opts.max_records ~= nil and not positive_integer(opts.max_records) then
     error('android_workbench.logcat.native.new: max_records must be a positive integer', 2)
   end
+  if opts.max_line_bytes ~= nil and not positive_integer(opts.max_line_bytes) then
+    error('android_workbench.logcat.native.new: max_line_bytes must be a positive integer', 2)
+  end
+  if opts.max_retained_bytes ~= nil and not positive_integer(opts.max_retained_bytes) then
+    error('android_workbench.logcat.native.new: max_retained_bytes must be a positive integer', 2)
+  end
   if opts.initial_lines ~= nil and not positive_integer(opts.initial_lines) then
     error('android_workbench.logcat.native.new: initial_lines must be a positive integer', 2)
   end
@@ -155,6 +163,8 @@ function M.new(opts)
   if opts.input ~= nil and type(opts.input) ~= 'function' then error('android_workbench.logcat.native.new: input must be a function', 2) end
 
   local max_records = opts.max_records or DEFAULT_MAX_RECORDS
+  local max_line_bytes = opts.max_line_bytes or DEFAULT_MAX_LINE_BYTES
+  local max_retained_bytes = opts.max_retained_bytes or DEFAULT_MAX_RETAINED_BYTES
   local initial_lines = opts.initial_lines or DEFAULT_INITIAL_LINES
   local height = opts.height or DEFAULT_HEIGHT
   local uid_timeout_ms = opts.uid_timeout_ms or DEFAULT_UID_TIMEOUT_MS
@@ -200,7 +210,9 @@ function M.new(opts)
         partial = '',
         previous = nil,
         discarding_gap = false,
+        discarding_cr = false,
         records = {},
+        record_bytes = 0,
         filters = { level = 'verbose', tag = nil, text = nil },
         paused = false,
         follow = true,
@@ -302,13 +314,24 @@ function M.new(opts)
       end
 
       local function trim_records()
-        if #state.records <= max_records then return false end
-        local trim = math.max(#state.records - max_records, math.max(1, math.floor(max_records / 10)))
+        local count = #state.records
+        local trim = 0
+        if count > max_records then trim = math.max(count - max_records, math.max(1, math.floor(max_records / 10))) end
+        local retained_bytes = state.record_bytes
+        for index = 1, trim do
+          retained_bytes = retained_bytes - #state.records[index].raw
+        end
+        while trim < count and retained_bytes > max_retained_bytes do
+          trim = trim + 1
+          retained_bytes = retained_bytes - #state.records[trim].raw
+        end
+        if trim == 0 then return false end
         local retained = {}
-        for index = trim + 1, #state.records do
+        for index = trim + 1, count do
           retained[#retained + 1] = state.records[index]
         end
         state.records = retained
+        state.record_bytes = retained_bytes
         return true
       end
 
@@ -317,6 +340,7 @@ function M.new(opts)
         local visible = {}
         for _, record in ipairs(records) do
           state.records[#state.records + 1] = record
+          state.record_bytes = state.record_bytes + #record.raw
           if Model.matches(record, state.filters) then visible[#visible + 1] = record end
         end
         local trimmed = trim_records()
@@ -344,24 +368,38 @@ function M.new(opts)
 
       local function consume(data)
         if state.done or type(data) ~= 'string' or data == '' then return end
-        local value = state.partial .. data
+        local value = state.partial == '' and data or state.partial .. data
         local start = 1
         local records = {}
         while true do
           local newline = value:find('[\r\n]', start)
           if not newline then break end
           if value:sub(newline, newline) == '\r' and newline == #value then break end
-          local line = value:sub(start, newline - 1)
-          local record = Model.parse_line(line, state.previous)
-          state.previous = record
-          records[#records + 1] = record
+          if newline - start <= max_line_bytes then
+            local line = value:sub(start, newline - 1)
+            local record = Model.parse_line(line, state.previous)
+            state.previous = record
+            records[#records + 1] = record
+          else
+            state.previous = nil
+          end
           if value:sub(newline, newline + 1) == '\r\n' then
             start = newline + 2
           else
             start = newline + 1
           end
         end
-        state.partial = value:sub(start)
+        local partial_bytes = #value - start + 1
+        local trailing_cr = partial_bytes > 0 and value:sub(-1) == '\r'
+        if trailing_cr then partial_bytes = partial_bytes - 1 end
+        if partial_bytes > max_line_bytes then
+          state.partial = ''
+          state.previous = nil
+          state.discarding_gap = true
+          state.discarding_cr = trailing_cr
+        else
+          state.partial = value:sub(start)
+        end
         append_records(records)
       end
 
@@ -370,8 +408,19 @@ function M.new(opts)
         state.previous = nil
         state.discarding_gap = true
         if type(data) ~= 'string' or data == '' then return end
+        if state.discarding_cr then
+          state.discarding_cr = false
+          state.discarding_gap = false
+          if data:sub(1, 1) == '\n' then data = data:sub(2) end
+          consume(data)
+          return
+        end
         local newline = data:find '[\r\n]'
         if not newline then return end
+        if data:sub(newline, newline) == '\r' and newline == #data then
+          state.discarding_cr = true
+          return
+        end
         local start = newline + 1
         if data:sub(newline, newline + 1) == '\r\n' then start = newline + 2 end
         state.discarding_gap = false
@@ -387,10 +436,13 @@ function M.new(opts)
         cancel_handle(state.picker_handle)
         state.picker_handle = nil
         state.child = nil
-        if state.partial ~= '' then
-          local record = Model.parse_line(state.partial, state.previous)
+        if not state.discarding_gap and state.partial ~= '' then
+          local line = state.partial
+          if line:sub(-1) == '\r' then line = line:sub(1, -2) end
+          local record = Model.parse_line(line, state.previous)
           state.partial = ''
           state.records[#state.records + 1] = record
+          state.record_bytes = state.record_bytes + #record.raw
           trim_records()
         end
         state.phase = result.status == 'failure' and 'failed' or 'stopped'
@@ -623,7 +675,9 @@ function M.new(opts)
         end, vim.tbl_extend('force', map_opts, { desc = 'Toggle Logcat follow' }))
         vim.keymap.set('n', 'c', function()
           state.records = {}
+          state.record_bytes = 0
           state.discarding_gap = state.discarding_gap or state.partial ~= ''
+          state.discarding_cr = false
           state.partial = ''
           state.previous = nil
           render()
@@ -788,7 +842,10 @@ function M.new(opts)
           },
           on_output = function(event)
             if event.stream ~= 'stdout' then return end
-            if event.truncated or state.discarding_gap then
+            if event.truncated then
+              state.discarding_cr = false
+              consume_after_gap(event.data)
+            elseif state.discarding_gap then
               consume_after_gap(event.data)
             else
               consume(event.data)
