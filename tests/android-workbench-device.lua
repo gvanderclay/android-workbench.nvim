@@ -144,6 +144,28 @@ local ok, unexpected = xpcall(function()
   end
 
   do
+    local serial = 'adb-example (2)._adb-tls-connect._tcp'
+    local session = new_session()
+    local adb = new_adb({
+      { serial = serial, state = 'online', label = 'CPH2583' },
+    }, {
+      [serial] = { serial = serial, state = 'online', label = 'CPH2583' },
+    })
+    local device = Device.new {
+      adb = adb,
+      emulator = new_emulator({}, { code = 'emulator_not_found', message = 'Android Emulator package is not installed' }),
+      picker = new_picker(function() error 'a sole connected device must not open a picker' end),
+    }
+    local result
+    device:select(session, function(err, value) result = { err = err, value = value } end)
+
+    expect('wireless physical selection succeeds', result.err, nil)
+    expect('wireless physical selection returns exact serial', result.value and result.value.serial, serial)
+    expect('wireless physical selection persists exact serial', session:device(), { serial = serial })
+    expect('wireless physical selection validates exact serial', adb.calls.validate, { serial })
+  end
+
+  do
     local session = new_session { serial = 'R58M321' }
     local adb = new_adb({}, {
       R58M321 = { error = { code = 'device_not_found', message = 'disconnected' } },

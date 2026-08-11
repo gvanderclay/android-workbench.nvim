@@ -23,6 +23,20 @@ local DEVICE_STATES = {
   unauthorized = true,
 }
 
+local DEVICE_STATE_NAMES = {
+  'no permissions',
+  'device',
+  'authorizing',
+  'bootloader',
+  'connecting',
+  'host',
+  'offline',
+  'recovery',
+  'rescue',
+  'sideload',
+  'unauthorized',
+}
+
 local function failure(code, message, details)
   return {
     code = code,
@@ -51,8 +65,8 @@ end
 local function shell_quote(value) return "'" .. value:gsub("'", "'\\''") .. "'" end
 
 local function validate_serial(serial)
-  if type(serial) ~= 'string' or serial == '' or #serial > 1024 or serial:find '[%s%c]' then
-    return nil, failure('invalid_serial', 'Android device serial must be a non-empty string without whitespace or control characters.')
+  if type(serial) ~= 'string' or serial == '' or #serial > 1024 or serial:find '%c' then
+    return nil, failure('invalid_serial', 'Android device serial must be a non-empty string without control characters.')
   end
   return serial
 end
@@ -108,6 +122,24 @@ local function normalized_state(raw_state)
   return 'unknown'
 end
 
+local function split_device_entry(line)
+  for _, raw_state in ipairs(DEVICE_STATE_NAMES) do
+    local state_pattern = raw_state == 'no permissions' and 'no%s+permissions' or raw_state
+    local serial, detail = line:match('^(.*)%s+' .. state_pattern .. '%s+(.*)$')
+    if serial == nil then
+      serial = line:match('^(.*)%s+' .. state_pattern .. '$')
+      detail = ''
+    end
+    if serial ~= nil then
+      serial = vim.trim(serial)
+      if validate_serial(serial) then return serial, raw_state .. (detail ~= '' and ' ' .. detail or '') end
+    end
+  end
+
+  local serial, remainder = line:match '^(%S+)%s+(.+)$'
+  if serial and validate_serial(serial) then return serial, remainder end
+end
+
 local function parse_devices(stdout)
   local output = lines(stdout)
   local header_seen = false
@@ -125,7 +157,7 @@ local function parse_devices(stdout)
       else
         if #devices >= MAX_DEVICES then return nil, failure('invalid_devices_output', 'ADB returned too many devices.') end
 
-        local serial, remainder = line:match '^(%S+)%s+(.+)$'
+        local serial, remainder = split_device_entry(line)
         if not serial then return nil, failure('invalid_devices_output', 'ADB returned a malformed device entry.', { entry = line }) end
         if serials[serial] then return nil, failure('invalid_devices_output', 'ADB returned the same device serial more than once.', { serial = serial }) end
 

@@ -96,6 +96,7 @@ local picker_choice
 local input_calls = {}
 local input_value
 local timers = {}
+local device_serial = 'adb-example (2)._adb-tls-connect._tcp'
 
 local picker = {
   select = function(request, callback)
@@ -125,7 +126,7 @@ local function request(on_exit)
     project_dir = project_dir,
     variant = 'debug',
     resolve_adb = function() return '/fake/adb' end,
-    device_serial = 'emulator-5554',
+    device_serial = device_serial,
     application_id = 'com.example.app',
     focus = true,
     on_exit = on_exit,
@@ -216,7 +217,7 @@ local ok, unexpected = xpcall(function()
   expect('UID query uses exact direct argv', runner.calls[1].request.argv, {
     '/fake/adb',
     '-s',
-    'emulator-5554',
+    device_serial,
     'shell',
     'cmd',
     'package',
@@ -240,7 +241,7 @@ local ok, unexpected = xpcall(function()
   expect('Logcat stream uses exact UID-scoped argv', runner.calls[2].request.argv, {
     '/fake/adb',
     '-s',
-    'emulator-5554',
+    device_serial,
     'logcat',
     '--uid=10101',
     '-b',
@@ -255,7 +256,7 @@ local ok, unexpected = xpcall(function()
     kind = 'android-logcat',
     root = temporary_root,
     application_id = 'com.example.app',
-    device_serial = 'emulator-5554',
+    device_serial = device_serial,
     uid = 10101,
   })
 

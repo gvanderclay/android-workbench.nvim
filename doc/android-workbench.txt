@@ -243,7 +243,8 @@ and duplicate task IDs are rejected instead of being cached.
         does not start it. A running emulator is identified by both its ADB
         serial and AVD name so a reused console port cannot silently select
         another AVD. Physical devices must already be online in ADB; Workbench
-        does not pair, authorize, connect, or disconnect them.
+        preserves wireless ADB serials containing spaces exactly but does not
+        pair, authorize, connect, or disconnect devices.
 
                                                      *:Android-emulator-start*
 :Android emulator start

@@ -63,12 +63,13 @@ local ok, unexpected = xpcall(function()
     return completed, handle, function() return callback_count end
   end
 
+  local wireless_serial = 'adb-example (2)._adb-tls-connect._tcp'
   local devices_output = [[List of devices attached
 emulator-5554 device product:sdk_gphone64_arm64 model:Pixel_8_Pro device:emu64a transport_id:1
 R58M123 unauthorized usb:1-2 transport_id:2
 R58M999 no permissions (user in plugdev group); see [http://developer.android.com/tools/device.html]
 R58M321 device product:e1q model:Galaxy_S24 device:e1q transport_id:3
-]]
+]] .. wireless_serial .. ' device product:e1q model:CPH2583 device:OP595DL1 transport_id:4\n'
 
   respond { stdout = devices_output }
   local completed = await(function(callback) return service:list_devices(callback) end)
@@ -87,6 +88,8 @@ R58M321 device product:e1q model:Galaxy_S24 device:e1q transport_id:3
   expect('no-permissions state is normalized', completed.value[3].state, 'no_permissions')
   expect('no-permissions raw state is preserved', completed.value[3].raw_state, 'no permissions')
   expect('no-permissions explanation is preserved', completed.value[3].details, '(user in plugdev group); see [http://developer.android.com/tools/device.html]')
+  expect('wireless serial with spaces is preserved', completed.value[5].serial, wireless_serial)
+  expect('wireless serial state is normalized', completed.value[5].state, 'online')
   expect('device listing uses direct argv', invocations[1].argv, { '/fake/adb', 'devices', '-l' })
   expect('device listing requests text streams', invocations[1].opts.text, true)
 
@@ -467,6 +470,21 @@ Complete
   child_callback(nil, { { serial = 'R58M321', state = 'online', raw_state = 'device', label = 'Galaxy_S24' } })
   expect('validation child remains observable after cancellation refusal', child_result.err, nil)
   expect('validation child preserves its natural result', child_result.value.serial, 'R58M321')
+
+  local invalid_serial_invocations = #invocations
+  completed = await(function(callback) return service:validate_serial('invalid\tserial', callback) end)
+  expect('control-bearing serial remains invalid', completed.err.code, 'invalid_serial')
+  expect('control-bearing serial starts no adb process', #invocations, invalid_serial_invocations)
+
+  respond { stdout = devices_output }
+  local wireless_invocations = #invocations
+  completed = await(function(callback) return service:validate_serial(wireless_serial, callback) end)
+  expect('wireless serial validates', completed.err, nil)
+  expect('wireless serial validation returns exact identity', completed.value and completed.value.serial, wireless_serial)
+  expect('wireless serial validation invokes adb', #invocations, wireless_invocations + 1)
+  if #invocations > wireless_invocations then
+    expect('wireless serial validation keeps direct argv', invocations[#invocations].argv, { '/fake/adb', 'devices', '-l' })
+  end
 
   local invalid_process_result
   Adb.new({ adb = '/fake/adb', system = function() return true end }):list_devices(function(err) invalid_process_result = err end)

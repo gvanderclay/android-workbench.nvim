@@ -35,7 +35,7 @@ end
 
 local function valid_serial(serial) return type(serial) == 'string' and serial:match '^emulator%-%d+$' ~= nil and #serial <= 1024 end
 
-local function valid_device_serial(serial) return type(serial) == 'string' and serial ~= '' and #serial <= 1024 and serial:find '[%s%c]' == nil end
+local function valid_device_serial(serial) return type(serial) == 'string' and serial ~= '' and #serial <= 1024 and serial:find '%c' == nil end
 
 local function valid_optional_string(value, max_bytes, allow_empty)
   return value == nil or (type(value) == 'string' and (allow_empty or value ~= '') and #value <= max_bytes and value:find '[%c]' == nil)

@@ -135,7 +135,12 @@ local ok, unexpected = xpcall(function()
   do
     local spawn_count = 0
     local adb = {}
-    function adb:list_devices(callback) return completed(callback, nil, { device('emulator-5554', 'Pixel_API_35') }) end
+    function adb:list_devices(callback)
+      return completed(callback, nil, {
+        { serial = 'adb-example (2)._adb-tls-connect._tcp', state = 'online', label = 'CPH2583' },
+        device('emulator-5554', 'Pixel_API_35'),
+      })
+    end
     function adb:resolve_avd_name(_, callback) return completed(callback, nil, 'Pixel_API_35') end
     function adb:boot_completed(_, callback) return completed(callback, nil, true) end
     function adb:validate_serial(_, callback)
@@ -159,6 +164,7 @@ local ok, unexpected = xpcall(function()
       result = { err = err, value = value }
     end)
     expect('already-running ready AVD is adopted', result.err, nil)
+    expect('wireless physical serial does not block emulator discovery', result.value and result.value.serial, 'emulator-5554')
     expect('adopted AVD returns exact connected DTO', result.value, device('emulator-5554', 'Pixel_API_35'))
     expect('adoption never launches another emulator', spawn_count, 0)
     expect('adoption callback is exactly once', callback_count, 1)

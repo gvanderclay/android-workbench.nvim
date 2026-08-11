@@ -19,6 +19,7 @@ local function raw_string(value, field)
 end
 
 local function valid_identity(value) return type(value) == 'string' and value ~= '' and #value <= 1024 and not value:find '[%s%c]' end
+local function valid_serial(value) return type(value) == 'string' and value ~= '' and #value <= 1024 and not value:find '%c' end
 
 local function normalize_error(err, root, code, message)
   if type(err) == 'table' and type(rawget(err, 'code')) == 'string' and type(rawget(err, 'message')) == 'string' then return err end
@@ -139,13 +140,13 @@ local function stored_device(device)
   local serial = raw_string(device, 'serial')
   local avd_name = raw_string(device, 'avd_name')
   if avd_name ~= nil then
-    if not valid_identity(avd_name) or (serial ~= nil and not valid_identity(serial)) then return nil end
+    if not valid_identity(avd_name) or (serial ~= nil and not valid_serial(serial)) then return nil end
     return {
       avd_name = avd_name,
       serial = serial,
     }
   end
-  if not valid_identity(serial) then return nil end
+  if not valid_serial(serial) then return nil end
   return { serial = serial }
 end
 
@@ -162,7 +163,7 @@ local function runtime_device(value, expected_serial, expected_avd, root)
   local serial = raw_string(value, 'serial')
   local state = raw_string(value, 'state')
   local avd_name = raw_string(value, 'avd_name')
-  if not valid_identity(serial) or state ~= 'online' or (avd_name ~= nil and not valid_identity(avd_name)) then
+  if not valid_serial(serial) or state ~= 'online' or (avd_name ~= nil and not valid_identity(avd_name)) then
     return nil,
       workbench_error('invalid_device_result', 'Android device validation did not return an online device.', root, {
         serial = serial,
@@ -264,7 +265,7 @@ local function validate_device_rows(value, root)
   for _, row in ipairs(rows) do
     local serial = raw_string(row, 'serial')
     local state = raw_string(row, 'state')
-    if not valid_identity(serial) or state == nil or state == '' then
+    if not valid_serial(serial) or state == nil or state == '' then
       return nil, workbench_error('invalid_devices_result', 'ADB returned an invalid device entry.', root)
     end
     if serials[serial] then

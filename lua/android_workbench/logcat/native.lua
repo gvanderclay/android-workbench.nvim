@@ -40,7 +40,7 @@ end
 
 local function positive_integer(value) return type(value) == 'number' and value == value and value > 0 and value <= 2147483647 and value % 1 == 0 end
 
-local function valid_serial(value) return type(value) == 'string' and value ~= '' and #value <= 1024 and not value:find '[%s%c]' end
+local function valid_serial(value) return type(value) == 'string' and value ~= '' and #value <= 1024 and not value:find '%c' end
 
 local function valid_application_id(value)
   if type(value) ~= 'string' or value == '' or #value > 512 or not value:find('.', 1, true) then return false end
