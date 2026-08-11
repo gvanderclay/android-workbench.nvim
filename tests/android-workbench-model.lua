@@ -150,6 +150,106 @@ local ok, unexpected = xpcall(function()
     name = 'assembleDebug',
   })
 
+  local function expect_normalize_error(name, change, code)
+    local candidate = vim.deepcopy(snapshot)
+    change(candidate)
+    local normalized, normalize_err = model.normalize(candidate, root)
+    expect(name .. ' returns no snapshot', normalized, nil)
+    expect(name .. ' error code', normalize_err and normalize_err.code, code)
+  end
+
+  local provider_candidate = vim.deepcopy(snapshot)
+  local provider_normalized, provider_normalize_err = model.normalize(provider_candidate, root)
+  expect('provider-neutral normalization succeeds', provider_normalize_err, nil)
+  expect('provider-neutral normalization preserves the closed snapshot', provider_normalized, snapshot)
+  expect_true('provider-neutral normalization owns the snapshot', not rawequal(provider_normalized, provider_candidate))
+  expect_true('provider-neutral normalization owns nested DTOs', not rawequal(provider_normalized.targets[1], provider_candidate.targets[1]))
+  provider_candidate.targets[1].application_id = 'caller.mutated'
+  provider_candidate.builds[1].application_projects[1] = ':caller-mutated'
+  expect('provider mutation cannot change a normalized target', provider_normalized.targets[1].application_id, 'example.app.debug')
+  expect('provider mutation cannot change a normalized build', provider_normalized.builds[1].application_projects[1], ':app')
+
+  local reordered = vim.deepcopy(snapshot)
+  reordered.builds[1], reordered.builds[2] = reordered.builds[2], reordered.builds[1]
+  reordered.targets[1], reordered.targets[2] = reordered.targets[2], reordered.targets[1]
+  reordered.tasks[1], reordered.tasks[#reordered.tasks] = reordered.tasks[#reordered.tasks], reordered.tasks[1]
+  expect('provider-neutral normalization sorts every collection', model.normalize(reordered, root), snapshot)
+
+  local stamped = vim.deepcopy(snapshot)
+  stamped._android_workbench_gradle = { version = 1, status = 'unverifiable', reason = 'capture_unavailable' }
+  local normalized_stamp = assert(model.normalize(stamped, root))
+  expect('native freshness metadata is preserved as owned data', normalized_stamp._android_workbench_gradle, stamped._android_workbench_gradle)
+  expect_true('native freshness metadata is copied', not rawequal(normalized_stamp._android_workbench_gradle, stamped._android_workbench_gradle))
+
+  expect_normalize_error('snapshot with extra fields', function(value) value.provider_data = true end, 'invalid_snapshot')
+  expect_normalize_error('snapshot with a metatable', function(value) setmetatable(value, {}) end, 'invalid_snapshot')
+  expect_normalize_error('snapshot with the wrong root', function(value) value.root = root .. '/other' end, 'root_mismatch')
+  expect_normalize_error(
+    'snapshot with forged freshness metadata',
+    function(value) value._android_workbench_gradle = { version = 1, status = 'fingerprinted', fingerprint = 'forged' } end,
+    'invalid_snapshot'
+  )
+  expect_normalize_error('build with extra fields', function(value) value.builds[1].name = 'extra' end, 'invalid_build')
+  expect_normalize_error('build with forged identity', function(value) value.builds[1].id = ':forged' end, 'invalid_build')
+  expect_normalize_error('duplicate build path', function(value) value.builds[2].build_path = ':' end, 'invalid_build')
+  expect_normalize_error('duplicate canonical build root', function(value) value.builds[2].build_root = root end, 'identity_collision')
+  expect_normalize_error(
+    'duplicate application project',
+    function(value) value.builds[1].application_projects[2] = value.builds[1].application_projects[1] end,
+    'invalid_build'
+  )
+  expect_normalize_error('missing included build', function(value) value.builds[1].included_build_roots[1] = root .. '/missing' end, 'incomplete_snapshot')
+  expect_normalize_error('unreachable included build', function(value) value.builds[1].included_build_roots = {} end, 'incomplete_snapshot')
+  expect_normalize_error('build task count mismatch', function(value) value.builds[1].task_count = value.builds[1].task_count - 1 end, 'incomplete_snapshot')
+  expect_normalize_error('build project count below known projects', function(value) value.builds[1].project_count = 1 end, 'incomplete_snapshot')
+  expect_normalize_error('target with extra fields', function(value) value.targets[1].flavor = 'extra' end, 'invalid_target')
+  expect_normalize_error('target with forged id', function(value) value.targets[1].id = ':app#forged' end, 'invalid_target')
+  expect_normalize_error('target with forged project id', function(value) value.targets[1].project_id = ':forged' end, 'invalid_target')
+  expect_normalize_error('target with mismatched assemble task', function(value) value.targets[1].assemble_task = ':app:assembleRelease' end, 'invalid_target')
+  expect_normalize_error('duplicate target identity', function(value) value.targets[2] = vim.deepcopy(value.targets[1]) end, 'identity_collision')
+  expect_normalize_error('target with unknown build', function(value)
+    local target = value.targets[1]
+    target.build_path = ':missing'
+    target.build_root = root .. '/missing'
+    target.project_id = ':missing:app'
+    target.id = ':missing:app#debug'
+    target.assemble_task = ':missing:app:assembleDebug'
+    target.install_task = ':missing:app:installDebug'
+  end, 'incomplete_snapshot')
+  expect_normalize_error('target with undeclared project', function(value) value.builds[1].application_projects = {} end, 'incomplete_snapshot')
+  expect_normalize_error('target with missing execution task', function(value)
+    for index, task in ipairs(value.tasks) do
+      if task.id == value.targets[1].assemble_task then
+        table.remove(value.tasks, index)
+        value.builds[1].task_count = value.builds[1].task_count - 1
+        break
+      end
+    end
+  end, 'incomplete_snapshot')
+  expect_normalize_error(
+    'task with unknown build',
+    function(value) value.tasks[#value.tasks + 1] = { id = ':missing:help', build_path = ':missing', project_path = ':', name = 'help' } end,
+    'incomplete_snapshot'
+  )
+
+  local oversized_builds = vim.deepcopy(snapshot)
+  oversized_builds.builds = {}
+  for index = 1, model.limits.max_builds + 1 do
+    oversized_builds.builds[index] = false
+  end
+  local oversized_build_result, oversized_build_err = model.normalize(oversized_builds, root)
+  expect('oversized build collection returns no snapshot', oversized_build_result, nil)
+  expect('oversized build collection is rejected', oversized_build_err and oversized_build_err.code, 'invalid_snapshot')
+
+  local oversized_targets = vim.deepcopy(snapshot)
+  oversized_targets.targets = {}
+  for index = 1, model.limits.max_targets + 1 do
+    oversized_targets.targets[index] = false
+  end
+  local oversized_target_result, oversized_target_err = model.normalize(oversized_targets, root)
+  expect('oversized target collection returns no snapshot', oversized_target_result, nil)
+  expect('oversized target collection is rejected', oversized_target_err and oversized_target_err.code, 'invalid_snapshot')
+
   expect('task identity qualifies the root build root project', Task.identity(':', ':', 'help'), ':help')
   expect('task identity qualifies an included subproject', Task.identity(':build-logic', ':demo', 'assembleRelease'), ':build-logic:demo:assembleRelease')
   expect('task identity rejects a Gradle-invalid name', Task.identity(':', ':app', 'bad:name'), nil)

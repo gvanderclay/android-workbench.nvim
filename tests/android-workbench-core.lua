@@ -39,6 +39,57 @@ local state_selection = {
 local save_error
 local notifications = {}
 
+local function complete_snapshot(root, project_paths, tasks)
+  local targets = {}
+  local application_projects = vim.deepcopy(project_paths or {})
+  tasks = tasks and vim.deepcopy(tasks) or {}
+  local known_projects = { [':'] = true }
+
+  for _, project_path in ipairs(application_projects) do
+    local project_name = project_path:sub(2):gsub('[^%w_]', '_')
+    targets[#targets + 1] = {
+      id = project_path .. '#debug',
+      project_id = project_path,
+      build_path = ':',
+      build_root = root,
+      project_path = project_path,
+      project_dir = vim.fs.joinpath(root, project_name),
+      variant = 'debug',
+      application_id = 'example.' .. project_name,
+      assemble_task = project_path .. ':assembleDebug',
+      install_task = project_path .. ':installDebug',
+    }
+    tasks[#tasks + 1] = { id = project_path .. ':assembleDebug', build_path = ':', project_path = project_path, name = 'assembleDebug' }
+    tasks[#tasks + 1] = { id = project_path .. ':installDebug', build_path = ':', project_path = project_path, name = 'installDebug' }
+    known_projects[project_path] = true
+  end
+  for _, task in ipairs(tasks) do
+    known_projects[task.project_path] = true
+  end
+
+  local project_count = 0
+  for _ in pairs(known_projects) do
+    project_count = project_count + 1
+  end
+  return {
+    schema_version = 1,
+    root = root,
+    builds = {
+      {
+        id = ':',
+        build_path = ':',
+        build_root = root,
+        application_projects = application_projects,
+        included_build_roots = {},
+        project_count = project_count,
+        task_count = #tasks,
+      },
+    },
+    targets = targets,
+    tasks = tasks,
+  }
+end
+
 local session = Session.new {
   root = '/tmp/android-workbench-root',
   wrapper = '/tmp/android-workbench-root/gradlew',
@@ -89,13 +140,7 @@ local ok, unexpected = xpcall(function()
   expect('coalesced discovery starts once', discovery_calls, 1)
   expect('trust checked immediately before discovery once', trust_calls, 1)
 
-  local snapshot = {
-    schema_version = 1,
-    root = '/tmp/android-workbench-root',
-    builds = {},
-    targets = { { id = 'remembered-target' } },
-    tasks = {},
-  }
+  local snapshot = complete_snapshot('/tmp/android-workbench-root', { ':remembered' })
   discovery_callback(nil, snapshot)
   expect('waiters remain deferred', #completed, 0)
   flush()
@@ -146,13 +191,7 @@ local ok, unexpected = xpcall(function()
   session:refresh(function(err, value) refreshed[#refreshed + 1] = { err = err, snapshot = value } end)
   session:discover({}, function(err, value) refreshed[#refreshed + 1] = { err = err, snapshot = value } end)
   expect('normal caller joins forced replacement instead of receiving old cache', discovery_calls, 4)
-  local replacement = {
-    schema_version = 1,
-    root = '/tmp/android-workbench-root',
-    builds = {},
-    targets = { { id = 'new-target' }, { id = 'newer-target' } },
-    tasks = {},
-  }
+  local replacement = complete_snapshot('/tmp/android-workbench-root', { ':new', ':newer' })
   discovery_callback(nil, replacement)
   flush()
   expect('forced and normal waiters receive replacement', vim.tbl_map(function(item) return item.snapshot end, refreshed), {
@@ -286,26 +325,14 @@ local ok, unexpected = xpcall(function()
   local first_flight_callback = queued_callback
   queued_session:refresh(function(err, value) refresh_result = { err = err, snapshot = value } end)
   expect('refresh during discovery does not start concurrently', queued_calls, 1)
-  local first_snapshot = {
-    schema_version = 1,
-    root = queued_session.root,
-    builds = {},
-    targets = { { id = 'first' } },
-    tasks = {},
-  }
+  local first_snapshot = complete_snapshot(queued_session.root, { ':first' })
   first_flight_callback(nil, first_snapshot)
   flush()
   expect('ordinary caller receives the first flight', ordinary_result.snapshot, first_snapshot)
   expect('queued refresh starts a distinct replacement', queued_calls, 2)
   expect('queued refresh does not receive the superseded flight', refresh_result, nil)
   local replacement_callback = queued_callback
-  local queued_replacement = {
-    schema_version = 1,
-    root = queued_session.root,
-    builds = {},
-    targets = { { id = 'replacement' } },
-    tasks = {},
-  }
+  local queued_replacement = complete_snapshot(queued_session.root, { ':replacement' })
   replacement_callback(nil, queued_replacement)
   flush()
   expect('queued refresh receives only its replacement', refresh_result.snapshot, queued_replacement)
@@ -364,13 +391,7 @@ local ok, unexpected = xpcall(function()
   expect('first provider cancellation is accepted', repeated_cancel_handle:cancel(), true)
   expect('repeated provider cancellation is ignored', repeated_cancel_handle:cancel(), false)
   expect('provider receives one cancellation request', repeated_cancel_calls, 1)
-  repeated_cancel_callback(nil, {
-    schema_version = 1,
-    root = repeated_cancel_session.root,
-    builds = {},
-    targets = {},
-    tasks = {},
-  })
+  repeated_cancel_callback(nil, complete_snapshot(repeated_cancel_session.root, {}))
   flush()
   expect('accepted cancellation survives later provider success', repeated_cancel_result.err.code, 'cancelled')
   expect('accepted cancellation does not expose provider success', repeated_cancel_result.value, nil)
@@ -418,13 +439,7 @@ local ok, unexpected = xpcall(function()
   }
   local pending_delivery_result
   local pending_delivery_handle = pending_delivery_session:discover({}, function(err, value) pending_delivery_result = { err = err, value = value } end)
-  pending_delivery_callback(nil, {
-    schema_version = 1,
-    root = pending_delivery_session.root,
-    builds = {},
-    targets = {},
-    tasks = {},
-  })
+  pending_delivery_callback(nil, complete_snapshot(pending_delivery_session.root, {}))
   expect('terminal-but-undelivered discovery cancellation succeeds', pending_delivery_handle:cancel(), true)
   flush()
   expect('terminal-but-undelivered discovery is cancelled', pending_delivery_result.err.code, 'cancelled')
@@ -450,13 +465,7 @@ local ok, unexpected = xpcall(function()
   local mixed_cancel_handle = mixed_session:discover({}, function(err, value) mixed_cancelled = { err = err, value = value } end)
   mixed_session:discover({}, function(err, value) mixed_live = { err = err, value = value } end)
   expect('one coalesced waiter can cancel independently', mixed_cancel_handle:cancel(), true)
-  local mixed_snapshot = {
-    schema_version = 1,
-    root = mixed_session.root,
-    builds = {},
-    targets = {},
-    tasks = {},
-  }
+  local mixed_snapshot = complete_snapshot(mixed_session.root, {})
   mixed_callback(nil, mixed_snapshot)
   flush()
   expect('provider success cannot overwrite accepted waiter cancellation', mixed_cancelled.err.code, 'cancelled')
@@ -499,13 +508,7 @@ local ok, unexpected = xpcall(function()
   expect('last coalesced waiter completes after provider termination', second_cancel_result.code, 'cancelled')
   expect('cancelled coalesced flight releases ownership', coalesced_cancel_session:status().phase, 'idle')
 
-  local valid_shape = {
-    schema_version = 1,
-    root = '/tmp/android-workbench-snapshot-shape',
-    builds = {},
-    targets = {},
-    tasks = {},
-  }
+  local valid_shape = complete_snapshot('/tmp/android-workbench-snapshot-shape', {})
   local oversized_task_catalog = {}
   for index = 1, GradleTask.limits.max_tasks + 1 do
     oversized_task_catalog[index] = false
@@ -513,8 +516,10 @@ local ok, unexpected = xpcall(function()
   for name, mutate in pairs {
     ['missing builds array'] = function(value) value.builds = nil end,
     ['non-array builds'] = function(value) value.builds = { root = {} } end,
+    ['malformed build DTO'] = function(value) value.builds = { { id = ':' } } end,
     ['missing targets array'] = function(value) value.targets = nil end,
     ['non-array targets'] = function(value) value.targets = { app = {} } end,
+    ['malformed target DTO'] = function(value) value.targets = { { id = ':app#debug' } } end,
     ['missing tasks array'] = function(value) value.tasks = nil end,
     ['non-array tasks'] = function(value) value.tasks = { task = {} } end,
     ['malformed task DTO'] = function(value) value.tasks = { { id = ':other', build_path = ':', project_path = ':', name = 'help' } } end,
@@ -548,24 +553,32 @@ local ok, unexpected = xpcall(function()
     local invalid_result
     invalid_session:discover({}, function(err, value) invalid_result = { err = err, value = value } end)
     flush()
-    expect(name .. ' is rejected', invalid_result.err.code, 'discovery_invalid')
+    expect(name .. ' is rejected', invalid_result.err and invalid_result.err.code, 'discovery_invalid')
     expect(name .. ' exposes no partial snapshot', invalid_result.value, nil)
   end
 
-  local normalized_candidate = vim.deepcopy(valid_shape)
-  normalized_candidate.tasks = {
+  local normalized_candidate = complete_snapshot(valid_shape.root, {}, {
     { id = ':z:last', build_path = ':', project_path = ':z', name = 'last' },
     { id = ':a:first', build_path = ':', project_path = ':a', name = 'first' },
-  }
+  })
+  local normalized_discovery_calls = 0
+  local normalized_stale = true
+  local stale_candidate
   local normalized_session = Session.new {
     root = valid_shape.root,
     wrapper = valid_shape.root .. '/gradlew',
     discovery = {
       discover = function(_, callback)
+        normalized_discovery_calls = normalized_discovery_calls + 1
         callback(nil, normalized_candidate)
         return { cancel = function() return false end }
       end,
-      is_stale = function() return true end,
+      is_stale = function(candidate)
+        stale_candidate = candidate
+        candidate.builds[1].task_count = 0
+        candidate.tasks[1].name = 'mutatedByStalenessCheck'
+        return normalized_stale
+      end,
     },
     trust = { authorize = function() return true end },
     state = { load = function() end, save = function() return true end },
@@ -579,6 +592,17 @@ local ok, unexpected = xpcall(function()
     { id = ':a:first', build_path = ':', project_path = ':a', name = 'first' },
     { id = ':z:last', build_path = ':', project_path = ':z', name = 'last' },
   })
+  normalized_candidate.builds[1].task_count = 0
+  normalized_candidate.tasks[1].name = 'mutatedByProvider'
+  normalized_stale = false
+  local cached_normalized_result
+  normalized_session:discover({}, function(err, value) cached_normalized_result = { err = err, value = value } end)
+  flush()
+  expect('custom snapshot mutation does not force rediscovery', normalized_discovery_calls, 1)
+  expect('custom staleness receives an owned snapshot', stale_candidate ~= nil and not rawequal(stale_candidate, normalized_result.value), true)
+  expect('custom provider mutation cannot change the current build', cached_normalized_result.value.builds[1].task_count, 2)
+  expect('custom provider mutation cannot change the current task', cached_normalized_result.value.tasks[1].name, 'first')
+  expect('custom staleness mutation cannot change the current task', normalized_result.value.tasks[1].name, 'first')
 
   local metatable_candidate = vim.deepcopy(valid_shape)
   metatable_candidate.tasks = {

@@ -206,10 +206,14 @@ custom discovery adapter may also provide `is_stale(snapshot)`. Without that
 method, Workbench conservatively discovers again for each model-dependent
 action instead of caching an unverifiable snapshot. A successful custom
 snapshot must use `schema_version = 1`, return the exact requested canonical
-`root`, and provide array-valued `builds`, `targets`, and `tasks`. Every task is
-exactly `{ id, build_path, project_path, name }`, with `id` matching the derived
-qualified Gradle identity. Missing or malformed arrays, task fields, identities,
-and duplicate task IDs are rejected instead of being cached.
+`root`, and provide bounded plain arrays named `builds`, `targets`, and `tasks`.
+Their records are closed DTOs: build, target, project, and task identities must
+be exact and unique; target task names and all cross-collection references must
+agree. Every task is exactly `{ id, build_path, project_path, name }`, with `id`
+matching the derived qualified Gradle identity. Workbench validates and copies
+the complete snapshot before caching it. It also passes an owned copy to
+`is_stale(snapshot)`, so later adapter mutation cannot change the cached model.
+Malformed, partial, aliased, or identity-inconsistent results are rejected.
 
 ==============================================================================
 3. COMMANDS                                          *android-workbench-commands*

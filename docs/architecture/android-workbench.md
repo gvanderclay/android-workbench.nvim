@@ -146,8 +146,8 @@ failed writes roll back or use an explicit reconciliation path.
 Discovery output is untrusted data. A snapshot must match the requested
 canonical root and contain valid, bounded, closed build, target, and task
 collections with exact identities. Native and custom discovery results require
-the same owned normalization before they enter Session. Completing that shared
-normalizer is a pre-release runtime gate.
+the same owned normalization before they enter Session. Freshness adapters
+receive a separate owned copy rather than the cached model.
 
 The bundled Gradle script is a runtime asset kept next to `discovery.lua` so its
 source-relative lookup remains independent of package-manager layout.

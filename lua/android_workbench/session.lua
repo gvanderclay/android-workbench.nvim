@@ -1,4 +1,4 @@
-local GradleTask = require 'android_workbench.gradle.task'
+local Model = require 'android_workbench.gradle.model'
 
 local M = {}
 
@@ -77,7 +77,7 @@ end
 
 local function snapshot_is_stale(discovery, snapshot)
   if type(discovery.is_stale) ~= 'function' then return true end
-  local ok, stale = pcall(discovery.is_stale, snapshot)
+  local ok, stale = pcall(discovery.is_stale, vim.deepcopy(snapshot))
   return not ok or stale ~= false
 end
 
@@ -301,27 +301,12 @@ function Session:discover(opts, callback)
 
     local started, handle = pcall(self.discovery.discover, { root = self.root }, function(err, snapshot)
       if not err then
-        if
-          type(snapshot) ~= 'table'
-          or snapshot.schema_version ~= 1
-          or snapshot.root ~= self.root
-          or type(snapshot.builds) ~= 'table'
-          or not vim.islist(snapshot.builds)
-          or type(snapshot.targets) ~= 'table'
-          or not vim.islist(snapshot.targets)
-          or type(snapshot.tasks) ~= 'table'
-          or not vim.islist(snapshot.tasks)
-        then
-          err = workbench_error('discovery_invalid', ('Android discovery returned an invalid snapshot for %s.'):format(self.root), self.root)
+        local normalized, normalize_err = Model.normalize(snapshot, self.root)
+        if not normalized then
+          err = workbench_error('discovery_invalid', ('Android discovery returned an invalid snapshot for %s.'):format(self.root), self.root, normalize_err)
           snapshot = nil
         else
-          local tasks = GradleTask.normalize_catalog(snapshot.tasks)
-          if not tasks then
-            err = workbench_error('discovery_invalid', ('Android discovery returned an invalid task catalog for %s.'):format(self.root), self.root)
-            snapshot = nil
-          else
-            snapshot.tasks = tasks
-          end
+          snapshot = normalized
         end
       end
       self:_finish_flight(flight, err, snapshot)

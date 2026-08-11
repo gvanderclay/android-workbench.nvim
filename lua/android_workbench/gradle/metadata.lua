@@ -148,12 +148,16 @@ function M.stamp(snapshot, provider_path)
   if type(snapshot) ~= 'table' then return snapshot end
   local ok, fingerprint = pcall(capture, snapshot, provider_path)
   local usable = ok and type(fingerprint) == 'string'
-  snapshot[FINGERPRINT_FIELD] = {
+  local stamp = {
     version = FINGERPRINT_VERSION,
     status = usable and 'fingerprinted' or 'unverifiable',
-    fingerprint = usable and fingerprint or nil,
-    reason = usable and nil or (ok and 'capture_unavailable' or 'capture_failed'),
   }
+  if usable then
+    stamp.fingerprint = fingerprint
+  else
+    stamp.reason = ok and 'capture_unavailable' or 'capture_failed'
+  end
+  snapshot[FINGERPRINT_FIELD] = stamp
   return snapshot
 end
 

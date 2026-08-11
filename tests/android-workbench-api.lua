@@ -32,12 +32,14 @@ local root_two = make_root()
 local root_three = make_root()
 local root_four = make_root()
 local root_five = make_root()
+local root_six = make_root()
 local notifications = {}
 local state_by_root = {}
 local state_loads = {}
+local state_saves = {}
 local trust_calls = {}
 local discovery_calls = {}
-local trusted = { [root_one] = true, [root_two] = false, [root_three] = true, [root_four] = true, [root_five] = true }
+local trusted = { [root_one] = true, [root_two] = false, [root_three] = true, [root_four] = true, [root_five] = true, [root_six] = true }
 local pending_root
 local provider_cancellations = 0
 local runner_calls = {}
@@ -66,6 +68,7 @@ local validated_serial_override
 local synchronous_device_validation = false
 local validation_handle_cancels = 0
 local snapshots_by_root = {}
+local raw_snapshots_by_root = {}
 local stale_roots = {}
 local stale_checks_by_root = {}
 local hold_picker = false
@@ -73,8 +76,67 @@ local picker_returns_nil = false
 local pending_picker
 local pending_discovery
 
+local function complete_snapshot(root, targets, tasks)
+  targets = vim.deepcopy(targets or {})
+  tasks = vim.deepcopy(tasks or {})
+  local application_projects = {}
+  local task_ids = {}
+  local known_projects = { [':'] = true }
+  local seen_applications = {}
+
+  for _, task in ipairs(tasks) do
+    task_ids[task.id] = true
+    known_projects[task.project_path] = true
+  end
+  for _, target in ipairs(targets) do
+    target.project_id = target.project_id or target.project_path
+    if not seen_applications[target.project_path] then
+      seen_applications[target.project_path] = true
+      application_projects[#application_projects + 1] = target.project_path
+    end
+    known_projects[target.project_path] = true
+    for _, field in ipairs { 'assemble_task', 'install_task' } do
+      local id = target[field]
+      if id and not task_ids[id] then
+        tasks[#tasks + 1] = {
+          id = id,
+          build_path = target.build_path,
+          project_path = target.project_path,
+          name = id:match '([^:]+)$',
+        }
+        task_ids[id] = true
+      end
+    end
+  end
+
+  local project_count = 0
+  for _ in pairs(known_projects) do
+    project_count = project_count + 1
+  end
+  return {
+    schema_version = 1,
+    root = root,
+    builds = {
+      {
+        id = ':',
+        build_path = ':',
+        build_root = root,
+        application_projects = application_projects,
+        included_build_roots = {},
+        project_count = project_count,
+        task_count = #tasks,
+      },
+    },
+    targets = targets,
+    tasks = tasks,
+  }
+end
+
 local function snapshot(root)
-  if snapshots_by_root[root] then return vim.deepcopy(snapshots_by_root[root]) end
+  if snapshots_by_root[root] then
+    local configured = snapshots_by_root[root]
+    return complete_snapshot(root, configured.targets, configured.tasks)
+  end
   local targets = {
     {
       id = ':app#debug',
@@ -101,16 +163,10 @@ local function snapshot(root)
       install_task = nil,
     },
   }
-  return {
-    schema_version = 1,
-    root = root,
-    builds = {},
-    targets = targets,
-    tasks = {
-      { id = ':help', build_path = ':', project_path = ':', name = 'help' },
-      { id = ':app:assembleDebug', build_path = ':', project_path = ':app', name = 'assembleDebug' },
-    },
-  }
+  return complete_snapshot(root, targets, {
+    { id = ':help', build_path = ':', project_path = ':', name = 'help' },
+    { id = ':app:assembleDebug', build_path = ':', project_path = ':app', name = 'assembleDebug' },
+  })
 end
 
 local ports = {
@@ -150,6 +206,7 @@ local ports = {
       return vim.deepcopy(state_by_root[root])
     end,
     save = function(root, selection)
+      state_saves[root] = (state_saves[root] or 0) + 1
       state_by_root[root] = vim.deepcopy(selection)
       return true
     end,
@@ -166,7 +223,7 @@ local ports = {
           end,
         }
       end
-      vim.schedule(function() callback(nil, snapshot(request.root)) end)
+      vim.schedule(function() callback(nil, raw_snapshots_by_root[request.root] or snapshot(request.root)) end)
       return { cancel = function() return true end }
     end,
     is_stale = function(current_snapshot)
@@ -1347,6 +1404,53 @@ local ok, unexpected = xpcall(function()
   expect('physical-device workflow never invokes emulator lifecycle', #emulator_calls, physical_emulator_count)
   expect('physical-device Logcat can be stopped independently', android.stop_logcat { root = root_five }, true)
 
+  local custom_target = {
+    id = ':app#debug',
+    project_id = ':app',
+    build_path = ':',
+    build_root = root_six,
+    project_path = ':app',
+    project_dir = vim.fs.joinpath(root_six, 'app'),
+    variant = 'debug',
+    application_id = 'example.custom',
+    assemble_task = ':app:assembleDebug',
+    install_task = ':app:installDebug',
+  }
+  local partial_custom_snapshot = complete_snapshot(root_six, { custom_target })
+  partial_custom_snapshot.builds[1].application_projects = {}
+  raw_snapshots_by_root[root_six] = partial_custom_snapshot
+  local runners_before_partial = #runner_calls
+  local adb_before_partial = #adb_calls
+  local partial_run
+  android.run({ root = root_six }, function(err, result) partial_run = { err = err, result = result } end)
+  expect_true('partial custom discovery completes', vim.wait(1000, function() return partial_run ~= nil end, 10))
+  expect('partial custom discovery is rejected', partial_run.err and partial_run.err.code, 'discovery_invalid')
+  expect('partial custom discovery starts no runner', #runner_calls, runners_before_partial)
+  expect('partial custom discovery reaches no ADB service', #adb_calls, adb_before_partial)
+  expect('partial custom discovery persists no selection', state_saves[root_six], nil)
+  expect('partial custom discovery does not become current', assert(android.status { root = root_six }).targets, 0)
+
+  local mutable_custom_snapshot = complete_snapshot(root_six, { custom_target })
+  raw_snapshots_by_root[root_six] = mutable_custom_snapshot
+  local custom_refresh
+  android.refresh({ root = root_six }, function(err, status) custom_refresh = { err = err, status = status } end)
+  expect_true('complete custom discovery refreshes', vim.wait(1000, function() return custom_refresh ~= nil end, 10))
+  expect('complete custom discovery succeeds', custom_refresh.err, nil)
+  mutable_custom_snapshot.targets[1].application_id = 'caller.mutated'
+  mutable_custom_snapshot.targets[1].install_task = ':app:mutatedInstall'
+  mutable_custom_snapshot.tasks[2].name = 'mutatedByProvider'
+  mutable_custom_snapshot.builds[1].application_projects = {}
+  local custom_run
+  android.run({ root = root_six }, function(err, result) custom_run = { err = err, result = result } end)
+  expect_true('later-mutated custom discovery Run completes', vim.wait(1000, function() return custom_run ~= nil end, 10))
+  expect('later-mutated custom discovery Run succeeds', custom_run.err, nil)
+  expect('later provider mutation cannot change Gradle argv', runner_calls[#runner_calls].argv[3], ':app:installDebug')
+  expect('later provider mutation cannot change ADB targeting', adb_calls[#adb_calls].application_id, 'example.custom')
+  expect('later provider mutation cannot change persisted target identity', state_by_root[root_six].app, { build_path = ':', project_path = ':app' })
+  expect('later provider mutation cannot change the current snapshot', assert(android.status { root = root_six }).targets, 1)
+  expect('later provider mutation does not force rediscovery', discovery_calls[root_six], 2)
+  expect('custom containment Logcat can be stopped independently', android.stop_logcat { root = root_six }, true)
+
   local logcat_count_before_shutdown = #logcat_calls
   local logcat_stops_before_shutdown = logcat_stops
   local logcat_for_shutdown
@@ -1714,6 +1818,7 @@ vim.fn.delete(root_two, 'rf')
 vim.fn.delete(root_three, 'rf')
 vim.fn.delete(root_four, 'rf')
 vim.fn.delete(root_five, 'rf')
+vim.fn.delete(root_six, 'rf')
 if not ok then fail('unexpected test error', unexpected) end
 
 if #failures > 0 then

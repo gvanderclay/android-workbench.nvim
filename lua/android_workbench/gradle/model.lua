@@ -7,8 +7,17 @@ local SCHEMA_VERSION = 1
 local MAX_RECORDS = 20000
 local MAX_RECORD_BYTES = 65536
 local MAX_TASKS = Task.limits.max_tasks
+local MAX_BUILDS = MAX_RECORDS
+local MAX_TARGETS = MAX_RECORDS
 local DISCOVERY_TASK = '__androidWorkbenchDiscoverV1'
 local PROJECT_TASK = '__androidWorkbenchEmitProjectV1'
+local FINGERPRINT_FIELD = '_android_workbench_gradle'
+
+M.limits = {
+  max_builds = MAX_BUILDS,
+  max_targets = MAX_TARGETS,
+  max_tasks = MAX_TASKS,
+}
 
 local function failure(code, message, details, source) return { code = code, message = message, details = details, source = source or 'protocol' } end
 
@@ -24,9 +33,9 @@ local function path(value, name)
   return valid
 end
 
-local function list(value, name)
-  if type(value) ~= 'table' or not vim.islist(value) then return nil, name .. ' must be an array' end
-  if #value > MAX_RECORDS then return nil, name .. ' exceeds the discovery limit' end
+local function list(value, name, maximum)
+  if type(value) ~= 'table' or getmetatable(value) ~= nil or not vim.islist(value) then return nil, name .. ' must be a plain array' end
+  if #value > (maximum or MAX_RECORDS) then return nil, name .. ' exceeds the discovery limit' end
   return value
 end
 
@@ -52,6 +61,17 @@ local function qualify(build_path, project_path, task_name)
 end
 
 local function task_suffix(variant) return variant:sub(1, 1):upper() .. variant:sub(2) end
+
+local function plain_object(value, allowed, required, name)
+  if type(value) ~= 'table' or getmetatable(value) ~= nil or vim.islist(value) then return nil, name .. ' must be a plain object' end
+  for key, _ in next, value do
+    if type(key) ~= 'string' or not allowed[key] then return nil, name .. ' contains unsupported fields' end
+  end
+  for key, _ in pairs(required) do
+    if rawget(value, key) == nil then return nil, name .. ' is missing ' .. key end
+  end
+  return value
+end
 
 local function record_lines(stdout)
   local records = {}
@@ -227,6 +247,338 @@ local function decode_task_project(record)
     chunk_count = chunk_count,
     task_count = task_count,
   }
+end
+
+local SNAPSHOT_FIELDS = {
+  [FINGERPRINT_FIELD] = true,
+  builds = true,
+  root = true,
+  schema_version = true,
+  targets = true,
+  tasks = true,
+}
+local SNAPSHOT_REQUIRED = { builds = true, root = true, schema_version = true, targets = true, tasks = true }
+local BUILD_FIELDS = {
+  application_projects = true,
+  build_path = true,
+  build_root = true,
+  id = true,
+  included_build_roots = true,
+  project_count = true,
+  task_count = true,
+}
+local BUILD_REQUIRED = BUILD_FIELDS
+local TARGET_FIELDS = {
+  application_id = true,
+  assemble_task = true,
+  build_path = true,
+  build_root = true,
+  id = true,
+  install_task = true,
+  project_dir = true,
+  project_id = true,
+  project_path = true,
+  variant = true,
+}
+local TARGET_REQUIRED = {
+  application_id = true,
+  assemble_task = true,
+  build_path = true,
+  build_root = true,
+  id = true,
+  project_dir = true,
+  project_id = true,
+  project_path = true,
+  variant = true,
+}
+local FINGERPRINT_FIELDS = { fingerprint = true, reason = true, status = true, version = true }
+local FINGERPRINT_REQUIRED = { status = true, version = true }
+
+local function normalize_string_list(value, name)
+  local values, err = list(value, name)
+  if not values then return nil, err end
+  local result, seen = {}, {}
+  for _, candidate in ipairs(values) do
+    local normalized
+    normalized, err = path(candidate, name .. ' entry')
+    if not normalized then return nil, err end
+    if seen[normalized] then return nil, name .. ' entries must be unique' end
+    seen[normalized] = true
+    result[#result + 1] = normalized
+  end
+  table.sort(result)
+  return result
+end
+
+local function normalize_root_list(value, name)
+  local values, err = list(value, name)
+  if not values then return nil, err end
+  local result, seen = {}, {}
+  for _, candidate in ipairs(values) do
+    local normalized
+    normalized, err = text(candidate, name .. ' entry', 16384)
+    if not normalized then return nil, err end
+    normalized = vim.fs.normalize(normalized)
+    if seen[normalized] then return nil, name .. ' entries must be unique' end
+    seen[normalized] = true
+    result[#result + 1] = normalized
+  end
+  table.sort(result)
+  return result
+end
+
+local function normalize_build(value)
+  local _, err = plain_object(value, BUILD_FIELDS, BUILD_REQUIRED, 'build')
+  if err then return nil, err end
+
+  local build_path
+  build_path, err = path(rawget(value, 'build_path'), 'build_path')
+  if not build_path then return nil, err end
+  if rawget(value, 'id') ~= build_path then return nil, 'build id does not match build_path' end
+
+  local build_root
+  build_root, err = text(rawget(value, 'build_root'), 'build_root', 16384)
+  if not build_root then return nil, err end
+  build_root = vim.fs.normalize(build_root)
+
+  local application_projects
+  application_projects, err = normalize_string_list(rawget(value, 'application_projects'), 'application_projects')
+  if not application_projects then return nil, err end
+  local included_build_roots
+  included_build_roots, err = normalize_root_list(rawget(value, 'included_build_roots'), 'included_build_roots')
+  if not included_build_roots then return nil, err end
+
+  local project_count
+  project_count, err = integer(rawget(value, 'project_count'), 'project_count')
+  if not project_count or project_count == 0 then return nil, err or 'project_count must be positive' end
+  local task_count
+  task_count, err = integer(rawget(value, 'task_count'), 'task_count', MAX_TASKS)
+  if not task_count then return nil, err end
+
+  return {
+    id = build_path,
+    build_path = build_path,
+    build_root = build_root,
+    application_projects = application_projects,
+    included_build_roots = included_build_roots,
+    project_count = project_count,
+    task_count = task_count,
+  }
+end
+
+local function normalize_target(value)
+  local _, err = plain_object(value, TARGET_FIELDS, TARGET_REQUIRED, 'target')
+  if err then return nil, err end
+
+  local build_path
+  build_path, err = path(rawget(value, 'build_path'), 'build_path')
+  if not build_path then return nil, err end
+  local project_path
+  project_path, err = path(rawget(value, 'project_path'), 'project_path')
+  if not project_path then return nil, err end
+  local build_root
+  build_root, err = text(rawget(value, 'build_root'), 'build_root', 16384)
+  if not build_root then return nil, err end
+  build_root = vim.fs.normalize(build_root)
+  local project_dir
+  project_dir, err = text(rawget(value, 'project_dir'), 'project_dir', 16384)
+  if not project_dir then return nil, err end
+  project_dir = vim.fs.normalize(project_dir)
+  local variant
+  variant, err = text(rawget(value, 'variant'), 'variant', 512)
+  if not variant then return nil, err end
+  local application_id
+  application_id, err = text(rawget(value, 'application_id'), 'application_id', 2048)
+  if not application_id then return nil, err end
+
+  local identity = project_identity(build_path, project_path)
+  if rawget(value, 'project_id') ~= identity then return nil, 'project_id does not match its Gradle identity' end
+  if rawget(value, 'id') ~= identity .. '#' .. variant then return nil, 'target id does not match its Gradle identity' end
+
+  local suffix = task_suffix(variant)
+  local assemble_task
+  assemble_task, err = path(rawget(value, 'assemble_task'), 'assemble_task')
+  if not assemble_task then return nil, err end
+  if assemble_task ~= qualify(build_path, project_path, 'assemble' .. suffix) then return nil, 'assemble_task does not match its variant identity' end
+
+  local install_task
+  if rawget(value, 'install_task') ~= nil then
+    install_task, err = path(rawget(value, 'install_task'), 'install_task')
+    if not install_task then return nil, err end
+    if install_task ~= qualify(build_path, project_path, 'install' .. suffix) then return nil, 'install_task does not match its variant identity' end
+  end
+
+  return {
+    id = identity .. '#' .. variant,
+    project_id = identity,
+    build_path = build_path,
+    build_root = build_root,
+    project_path = project_path,
+    project_dir = project_dir,
+    variant = variant,
+    application_id = application_id,
+    assemble_task = assemble_task,
+    install_task = install_task,
+  }
+end
+
+local function normalize_fingerprint(value)
+  local _, err = plain_object(value, FINGERPRINT_FIELDS, FINGERPRINT_REQUIRED, FINGERPRINT_FIELD)
+  if err then return nil, err end
+  if rawget(value, 'version') ~= 1 then return nil, FINGERPRINT_FIELD .. ' has an unsupported version' end
+
+  local status = rawget(value, 'status')
+  if status == 'fingerprinted' then
+    local fingerprint = rawget(value, 'fingerprint')
+    if type(fingerprint) ~= 'string' or #fingerprint ~= 64 or not fingerprint:match '^[0-9a-f]+$' or rawget(value, 'reason') ~= nil then
+      return nil, FINGERPRINT_FIELD .. ' has an invalid fingerprint'
+    end
+    return { version = 1, status = status, fingerprint = fingerprint }
+  end
+  if status == 'unverifiable' then
+    local reason = rawget(value, 'reason')
+    if (reason ~= 'capture_unavailable' and reason ~= 'capture_failed') or rawget(value, 'fingerprint') ~= nil then
+      return nil, FINGERPRINT_FIELD .. ' has an invalid unverifiable reason'
+    end
+    return { version = 1, status = status, reason = reason }
+  end
+  return nil, FINGERPRINT_FIELD .. ' has an invalid status'
+end
+
+function M.normalize(snapshot, requested_root)
+  local _, err = plain_object(snapshot, SNAPSHOT_FIELDS, SNAPSHOT_REQUIRED, 'snapshot')
+  if err then return nil, failure('invalid_snapshot', err, nil, 'normalizer') end
+  if rawget(snapshot, 'schema_version') ~= SCHEMA_VERSION then
+    return nil, failure('invalid_snapshot', 'snapshot has an unsupported schema version', nil, 'normalizer')
+  end
+
+  local root
+  root, err = text(rawget(snapshot, 'root'), 'root', 16384)
+  if not root then return nil, failure('invalid_snapshot', err, nil, 'normalizer') end
+  root = vim.fs.normalize(root)
+  if requested_root ~= nil and root ~= requested_root then
+    return nil, failure('root_mismatch', 'discovery snapshot root does not match the requested project root', nil, 'normalizer')
+  end
+
+  local build_values
+  build_values, err = list(rawget(snapshot, 'builds'), 'builds', MAX_BUILDS)
+  if not build_values then return nil, failure('invalid_snapshot', err, nil, 'normalizer') end
+  local target_values
+  target_values, err = list(rawget(snapshot, 'targets'), 'targets', MAX_TARGETS)
+  if not target_values then return nil, failure('invalid_snapshot', err, nil, 'normalizer') end
+  local task_values
+  task_values, err = list(rawget(snapshot, 'tasks'), 'tasks', MAX_TASKS)
+  if not task_values then return nil, failure('invalid_snapshot', err, nil, 'normalizer') end
+
+  local builds, builds_by_path, builds_by_root, projects_by_build = {}, {}, {}, {}
+  for _, candidate in ipairs(build_values) do
+    local build
+    build, err = normalize_build(candidate)
+    if not build then return nil, failure('invalid_build', err, nil, 'normalizer') end
+    if builds_by_path[build.build_path] or builds_by_root[build.build_root] then
+      return nil, failure('identity_collision', 'build paths and roots must be unique', nil, 'normalizer')
+    end
+    builds[#builds + 1] = build
+    builds_by_path[build.build_path] = build
+    builds_by_root[build.build_root] = build
+    local projects = { [':'] = true }
+    for _, project_path in ipairs(build.application_projects) do
+      projects[project_path] = true
+    end
+    projects_by_build[build.build_path] = projects
+  end
+  table.sort(builds, function(left, right) return left.build_path < right.build_path end)
+
+  local root_build = builds_by_path[':']
+  if not root_build then return nil, failure('incomplete_snapshot', 'root build is missing', nil, 'normalizer') end
+  if root_build.build_root ~= root then return nil, failure('root_mismatch', 'root build does not match the snapshot root', nil, 'normalizer') end
+
+  for _, build in ipairs(builds) do
+    for _, included_root in ipairs(build.included_build_roots) do
+      if not builds_by_root[included_root] then
+        return nil, failure('incomplete_snapshot', 'included build root does not identify a build', { build_root = included_root }, 'normalizer')
+      end
+    end
+  end
+  local reached = {}
+  local function visit(build)
+    if reached[build.build_path] then return end
+    reached[build.build_path] = true
+    for _, included_root in ipairs(build.included_build_roots) do
+      visit(builds_by_root[included_root])
+    end
+  end
+  visit(root_build)
+  for build_path, _ in pairs(builds_by_path) do
+    if not reached[build_path] then
+      return nil, failure('incomplete_snapshot', 'build is unreachable from the root build', { build_path = build_path }, 'normalizer')
+    end
+  end
+
+  local tasks, task_err = Task.normalize_catalog(task_values)
+  if not tasks then return nil, failure('invalid_task', task_err, nil, 'normalizer') end
+  local tasks_by_id, task_counts = {}, {}
+  for _, task in ipairs(tasks) do
+    local build = builds_by_path[task.build_path]
+    if not build then return nil, failure('incomplete_snapshot', 'task references an unknown build', { task = task.id }, 'normalizer') end
+    if task.project_path == ':' and task.name == DISCOVERY_TASK then
+      return nil, failure('invalid_task', 'root discovery task is provider-internal', { task = task.id }, 'normalizer')
+    end
+    if task.name == PROJECT_TASK and vim.tbl_contains(build.application_projects, task.project_path) then
+      return nil, failure('invalid_task', 'application project emitter is provider-internal', { task = task.id }, 'normalizer')
+    end
+    tasks_by_id[task.id] = task
+    task_counts[task.build_path] = (task_counts[task.build_path] or 0) + 1
+    projects_by_build[task.build_path][task.project_path] = true
+  end
+  for _, build in ipairs(builds) do
+    if (task_counts[build.build_path] or 0) ~= build.task_count then
+      return nil, failure('incomplete_snapshot', 'build task count does not match the task catalog', { build_path = build.build_path }, 'normalizer')
+    end
+    local known_projects = 0
+    for _ in pairs(projects_by_build[build.build_path]) do
+      known_projects = known_projects + 1
+    end
+    if known_projects > build.project_count then
+      return nil, failure('incomplete_snapshot', 'build project count is smaller than its known projects', { build_path = build.build_path }, 'normalizer')
+    end
+  end
+
+  local targets, targets_by_id = {}, {}
+  for _, candidate in ipairs(target_values) do
+    local target
+    target, err = normalize_target(candidate)
+    if not target then return nil, failure('invalid_target', err, nil, 'normalizer') end
+    if targets_by_id[target.id] then return nil, failure('identity_collision', 'target ids must be unique', { target = target.id }, 'normalizer') end
+    local build = builds_by_path[target.build_path]
+    if not build or target.build_root ~= build.build_root then
+      return nil, failure('incomplete_snapshot', 'target does not match a known build', { target = target.id }, 'normalizer')
+    end
+    if not projects_by_build[target.build_path][target.project_path] or not vim.tbl_contains(build.application_projects, target.project_path) then
+      return nil, failure('incomplete_snapshot', 'target project is not declared by its build', { target = target.id }, 'normalizer')
+    end
+    if not tasks_by_id[target.assemble_task] or (target.install_task and not tasks_by_id[target.install_task]) then
+      return nil, failure('incomplete_snapshot', 'target execution tasks are missing from the task catalog', { target = target.id }, 'normalizer')
+    end
+    targets[#targets + 1] = target
+    targets_by_id[target.id] = true
+  end
+  table.sort(targets, function(left, right) return left.id < right.id end)
+
+  local normalized = {
+    schema_version = SCHEMA_VERSION,
+    root = root,
+    builds = builds,
+    targets = targets,
+    tasks = tasks,
+  }
+  if rawget(snapshot, FINGERPRINT_FIELD) ~= nil then
+    local fingerprint
+    fingerprint, err = normalize_fingerprint(rawget(snapshot, FINGERPRINT_FIELD))
+    if not fingerprint then return nil, failure('invalid_snapshot', err, nil, 'normalizer') end
+    normalized[FINGERPRINT_FIELD] = fingerprint
+  end
+  return normalized
 end
 
 function M.decode(stdout, nonce, requested_root)
@@ -413,7 +765,10 @@ function M.decode(stdout, nonce, requested_root)
   table.sort(target_list, function(left, right) return left.id < right.id end)
   table.sort(task_list, function(left, right) return left.id < right.id end)
 
-  return { schema_version = SCHEMA_VERSION, root = root_build.build_root, builds = build_list, targets = target_list, tasks = task_list }
+  return M.normalize(
+    { schema_version = SCHEMA_VERSION, root = root_build.build_root, builds = build_list, targets = target_list, tasks = task_list },
+    requested_root
+  )
 end
 
 M.marker = MARKER

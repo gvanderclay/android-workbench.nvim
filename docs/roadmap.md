@@ -63,11 +63,11 @@ shutdown is the stronger irreversible boundary.
 
 ### R1.3 Complete discovery normalization
 
-- [ ] Extract one provider-neutral closed snapshot normalizer and owned copy.
-- [ ] Apply it to bundled and custom discovery before Session caching.
-- [ ] Validate bounds, arrays, build/target/task identities, derived task names,
+- [x] Extract one provider-neutral closed snapshot normalizer and owned copy.
+- [x] Apply it to bundled and custom discovery before Session caching.
+- [x] Validate bounds, arrays, build/target/task identities, derived task names,
   uniqueness, exact root, and cross-collection consistency.
-- [ ] Prove malformed, partial, or mutating custom snapshots cannot reach a
+- [x] Prove malformed, partial, or mutating custom snapshots cannot reach a
   runner, ADB service, state adapter, or current snapshot.
 
 This closes an adapter containment problem. It is not a shell-injection claim;

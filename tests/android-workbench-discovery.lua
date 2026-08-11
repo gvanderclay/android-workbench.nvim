@@ -169,6 +169,7 @@ local ok, unexpected = xpcall(function()
   expect_true('nonce is scoped to the child environment', invocations[1].opts.env.ANDROID_WORKBENCH_DISCOVERY_NONCE:match '^[a-f0-9]+$')
   expect('unchanged Gradle metadata is fresh', discovery.is_stale(result.snapshot), false)
   expect('fingerprinted metadata reports freshness explicitly', metadata.freshness(result.snapshot, invocations[1].argv[3]), 'fresh')
+  expect('fingerprinted metadata has no failure reason', result.snapshot._android_workbench_gradle.reason, nil)
 
   local unverifiable = metadata.stamp(vim.deepcopy(result.snapshot), vim.fs.joinpath(root, 'missing-provider.gradle'))
   expect('unverifiable metadata is modeled explicitly', metadata.freshness(unverifiable, invocations[1].argv[3]), 'unverifiable')
