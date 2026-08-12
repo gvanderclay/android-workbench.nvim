@@ -127,11 +127,11 @@ Workbench already executes direct argv.
 
 ### R2.4 Consumer-safe context query
 
-- [ ] Add a narrow, side-effect-free facade query for whether a path/buffer is
+- [x] Add a narrow, side-effect-free facade query for whether a path/buffer is
   under a Workbench Gradle root.
-- [ ] Move consumer mapping installation off direct
+- [x] Move consumer mapping installation off direct
   `require('android_workbench.root')` access.
-- [ ] Keep the resolver implementation and its filesystem seams private.
+- [x] Keep the resolver implementation and its filesystem seams private.
 
 ### R2.5 Bounded package patches
 
