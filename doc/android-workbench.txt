@@ -436,6 +436,9 @@ Android action starts.
                                                    *android-workbench.setup()*
   android.setup(opts)
 
+                                              *android-workbench.is_project()*
+  under_root = android.is_project(context)
+
                                              *android-workbench.open_actions()*
   handle = android.open_actions(context)
 
@@ -491,6 +494,14 @@ precedence over `bufnr`. Without `path`, Workbench uses the named buffer path,
 then the current working directory for an unnamed buffer. The value is still a
 root-discovery input: Workbench resolves and canonicalizes the directory that
 owns `gradlew` rather than trusting a caller-supplied canonical identity.
+
+`is_project()` returns `true` when that context is below a directory containing
+`gradlew`, and `false` when no wrapper can be resolved or the path cannot be
+inspected. It does not prove that the Gradle build contains an Android target;
+that requires trusted Gradle discovery. The query only reads the filesystem.
+It does not construct the application, load Workbench state, prompt for trust,
+run Gradle, query ADB, or enumerate AVDs. Consumers may use it for contextual
+buffer-local policy without depending on the private root resolver.
 
 CALLBACKS AND HANDLES
 

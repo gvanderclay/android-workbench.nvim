@@ -46,12 +46,12 @@ fallback. `setup()` validates and stores configuration only; it must run before
 the first action and must not resolve a root, load state, create a session,
 prompt for trust, or start work. The first action constructs `App`.
 
-The supported pre-1.0 facade exposes setup, status and action discovery, model
-refresh, target selection, emulator start/stop, Build/Run/application Stop,
-arbitrary Gradle tasks, native task-output reopen, Logcat start/stop,
-cancellation, and shutdown. `setup()` returns no internal configuration data.
-Notification fallback is owned by a private module rather than an accidental
-`_notify` facade member.
+The supported pre-1.0 facade exposes setup, a side-effect-free Gradle-root
+membership query, status and action discovery, model refresh, target selection,
+emulator start/stop, Build/Run/application Stop, arbitrary Gradle tasks, native
+task-output reopen, Logcat start/stop, cancellation, and shutdown. `setup()`
+returns no internal configuration data. Notification fallback is owned by a
+private module rather than an accidental `_notify` facade member.
 
 Root-aware facade calls accept only `bufnr`, `path`, and `root` context fields.
 Invalid setup, context, callback, and target-kind inputs are programmer errors
@@ -68,6 +68,12 @@ they can be required; `App`, `Session`, root/device services, configuration,
 command/action helpers, notification fallback, task operations, state, and
 model helpers remain internal. Constructor intent and replacement-port DTO
 maturity are separate promises.
+
+`is_project()` delegates to the private root resolver and returns only whether
+the context is below a directory containing `gradlew`. It performs no Android
+model discovery and exposes neither the canonical root nor filesystem seams.
+It must not construct `App`, load state, authorize or execute project code, or
+contact Android SDK tools.
 
 The facade owns the mutable DTO members it returns through status, synchronous
 errors, and async callbacks. It exposes only the documented error fields and
@@ -89,18 +95,19 @@ The dependency direction is inward toward neutral domain values and outward
 through explicit ports:
 
 ```text
-command/plugin -> public facade -> App (composition root)
-                                      |
-                                      +-> Session -> trust + Gradle discovery
-                                      |                 -> model + metadata
-                                      +-> target + Gradle-task helpers
-                                      +-> Device -> ADB + emulator + state
-                                      +-> Execution -> runner
-                                      |                +-> task operation
-                                      |                |    -> problem parser
-                                      |                +-> native task output
-                                      +-> Logcat presenter -> model + runner
-                                      +-> picker + notifications + problem sink
+command/plugin -> public facade -> private root resolver
+                              \-> App (composition root)
+                                   |
+                                   +-> Session -> trust + Gradle discovery
+                                   |                 -> model + metadata
+                                   +-> target + Gradle-task helpers
+                                   +-> Device -> ADB + emulator + state
+                                   +-> Execution -> runner
+                                   |                +-> task operation
+                                   |                |    -> problem parser
+                                   |                +-> native task output
+                                   +-> Logcat presenter -> model + runner
+                                   +-> picker + notifications + problem sink
 
 consumer configuration -> optional adapters -> public ports
 ```

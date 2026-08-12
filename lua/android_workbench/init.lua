@@ -234,6 +234,14 @@ function M.setup(opts)
 end
 
 ---@param opts? AndroidWorkbenchContext
+---@return boolean
+function M.is_project(opts)
+  local action_context = context(opts)
+  local resolved = require('android_workbench.root').new():resolve(action_context)
+  return resolved ~= nil
+end
+
+---@param opts? AndroidWorkbenchContext
 ---@return AndroidWorkbenchOperationHandle handle
 function M.open_actions(opts)
   local action_context = context(opts)

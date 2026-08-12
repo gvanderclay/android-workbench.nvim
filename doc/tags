@@ -12,6 +12,7 @@ android-workbench-trust	android-workbench.txt	/*android-workbench-trust*
 android-workbench.build()	android-workbench.txt	/*android-workbench.build()*
 android-workbench.cancel()	android-workbench.txt	/*android-workbench.cancel()*
 android-workbench.gradle_task()	android-workbench.txt	/*android-workbench.gradle_task()*
+android-workbench.is_project()	android-workbench.txt	/*android-workbench.is_project()*
 android-workbench.logcat()	android-workbench.txt	/*android-workbench.logcat()*
 android-workbench.open_actions()	android-workbench.txt	/*android-workbench.open_actions()*
 android-workbench.refresh()	android-workbench.txt	/*android-workbench.refresh()*

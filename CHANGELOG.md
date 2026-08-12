@@ -11,6 +11,8 @@ while the first pre-1.0 release gates remain open.
   action results, structured errors, ownership, and shutdown.
 - An explicit list of intentional constructor modules and private runtime
   modules.
+- A side-effect-free `is_project()` facade query for contextual consumer
+  policy without private root-resolver access.
 - Supported `0.x` picker, runner, and problem-sink DTO contracts.
 - A supported five-method `0.x` ADB service contract, including its conditional
   native emulator and Logcat composition limits.

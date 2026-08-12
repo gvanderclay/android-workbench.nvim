@@ -260,8 +260,9 @@ vimdoc and tests.
 - **Consequences:** `_notify` moved behind an internal module, `setup()` returns
   nothing, context accepts only `bufnr`, `path`, and `root`, public errors have
   four named fields, and internal module reachability grants no support. The
-  sibling consumer's direct root-module use remains private until R2.4 supplies
-  its narrow replacement query.
+  narrow `is_project()` query lets consumers test Gradle-root membership
+  without exposing the canonical root, resolver implementation, or filesystem
+  seams.
 - **Revisit when:** A demonstrated consumer needs another facade action or
   result field, a supported port requires a public constructor change, or the
   first stable release sets a stricter compatibility policy.

@@ -418,6 +418,7 @@ local ok, unexpected = xpcall(function()
       'build',
       'cancel',
       'gradle_task',
+      'is_project',
       'logcat',
       'open_actions',
       'refresh',
@@ -433,6 +434,21 @@ local ok, unexpected = xpcall(function()
       'stop_emulator',
       'stop_logcat',
     })
+  end
+  do
+    local project_buffer = vim.api.nvim_create_buf(false, false)
+    vim.api.nvim_buf_set_name(project_buffer, vim.fs.joinpath(root_one, 'app', 'src', 'Main.kt'))
+    expect('project query accepts a path below a Gradle wrapper', android.is_project { path = vim.fs.joinpath(root_one, 'settings.gradle.kts') }, true)
+    expect('project query accepts a named buffer below a Gradle wrapper', android.is_project { bufnr = project_buffer }, true)
+    expect('project query rejects a path without a Gradle wrapper', android.is_project { path = vim.fn.tempname() }, false)
+    expect('project query does not construct the application', package.loaded['android_workbench.app'], nil)
+    expect('project query does not load private state', package.loaded['android_workbench.state'], nil)
+
+    local valid_context, context_error = pcall(android.is_project, { unknown = true })
+    expect('project query rejects an unknown context field', valid_context, false)
+    expect_true('project query error names the field', tostring(context_error):find('context.unknown', 1, true))
+    expect('invalid project query does not construct the application', package.loaded['android_workbench.app'], nil)
+    vim.api.nvim_buf_delete(project_buffer, { force = true })
   end
   do
     local invalid_before_action, invalid_before_action_error = pcall(android.status, { unknown = true })
