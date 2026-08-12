@@ -381,6 +381,7 @@ local ok, unexpected = xpcall(function()
   expect_true('static command completion includes gradle', vim.tbl_contains(vim.fn.getcompletion('Android g', 'cmdline'), 'gradle'))
   expect_true('static command completion includes emulator', vim.tbl_contains(vim.fn.getcompletion('Android e', 'cmdline'), 'emulator'))
   expect_true('static command completion includes logcat', vim.tbl_contains(vim.fn.getcompletion('Android l', 'cmdline'), 'logcat'))
+  expect_true('static command completion includes output', vim.tbl_contains(vim.fn.getcompletion('Android o', 'cmdline'), 'output'))
   expect_true('target completion includes device', vim.tbl_contains(vim.fn.getcompletion('Android target d', 'cmdline'), 'device'))
   expect_true('emulator completion includes start', vim.tbl_contains(vim.fn.getcompletion('Android emulator s', 'cmdline'), 'start'))
   expect_true('emulator completion includes stop', vim.tbl_contains(vim.fn.getcompletion('Android emulator s', 'cmdline'), 'stop'))
@@ -498,6 +499,96 @@ local ok, unexpected = xpcall(function()
   expect('a failed presenter stop retains the current stream', replacement_app.logcats[root_one], old_entry)
   replacement_app:shutdown()
 
+  local native_runner_calls = {}
+  local native_runner = require('android_workbench.runner').new {
+    schedule = function(callback) callback() end,
+    system = function(_, options, on_exit)
+      native_runner_calls[#native_runner_calls + 1] = { options = options, on_exit = on_exit }
+      return { kill = function() return true end }
+    end,
+  }
+  local native_ports = {}
+  for name, port in pairs(ports) do
+    native_ports[name] = port
+  end
+  native_ports.runner = native_runner
+  local native_problem_batches = {}
+  native_ports.problems = {
+    publish = function(batch)
+      native_problem_batches[#native_problem_batches + 1] = vim.deepcopy(batch)
+      return true
+    end,
+  }
+  native_ports.notifications = { emit = function() end }
+  native_ports.trust = { authorize = function() return true end }
+  native_ports.state = {
+    load = function()
+      return {
+        app = { build_path = ':', project_path = ':app' },
+        variant = 'debug',
+      }
+    end,
+    save = function() return true end,
+  }
+  native_ports.discovery = {
+    discover = function(_, callback)
+      vim.schedule(function() callback(nil, snapshot(root_five)) end)
+      return { cancel = function() return true end }
+    end,
+    is_stale = function() return false end,
+  }
+  local native_output_app = require('android_workbench.app').new { ports = native_ports }
+  local shown, output_err = native_output_app:show_task_output { root = root_five }
+  expect('native output reports an empty root clearly', shown, nil)
+  expect('native output reports no prior task', output_err.code, 'no_task_output')
+  local native_build
+  native_output_app:build({ root = root_five }, function(err, result) native_build = { err = err, result = result } end)
+  expect_true('native App build reaches the runner', vim.wait(1000, function() return native_runner_calls[1] ~= nil end, 10))
+  local source_path = vim.fs.joinpath(root_five, 'app/src/Main.java')
+  native_runner_calls[1].options.stdout(nil, source_path .. ':12: error: cannot find symbol\n')
+  native_runner_calls[1].options.stderr(nil, 'Could not resolve dependency com.example:missing:1')
+  native_runner_calls[1].on_exit { code = 1, signal = 0 }
+  expect_true('native App build reaches its terminal', vim.wait(1000, function() return native_build ~= nil end, 10))
+  expect('native App preserves the Gradle failure', native_build.err.code, 'build_failed')
+  expect('recognized native output still reaches the configured problem sink', native_problem_batches[1], {
+    root = root_five,
+    kind = 'build',
+    name = 'Android build :app · debug',
+    status = 'failure',
+    items = {
+      {
+        path = source_path,
+        line = 12,
+        message = 'cannot find symbol',
+        severity = 'error',
+      },
+    },
+    truncated = false,
+  })
+  expect('native task output becomes visible in root status', assert(native_output_app:status { root = root_five }).task_output, true)
+  local native_output_buf
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].filetype == 'androidtaskoutput' then native_output_buf = bufnr end
+  end
+  local native_output_win = native_output_buf and vim.fn.bufwinid(native_output_buf) or -1
+  if native_output_buf then
+    expect_true(
+      'locationless native failure remains in complete task output',
+      table.concat(vim.api.nvim_buf_get_lines(native_output_buf, 0, -1, false), '\n'):find('Could not resolve dependency', 1, true) ~= nil
+    )
+  end
+  if native_output_win ~= -1 then vim.api.nvim_win_close(native_output_win, true) end
+  expect('App reopens the latest native root output', native_output_app:show_task_output { root = root_five }, true)
+  expect('App reopens only the native output buffer', vim.api.nvim_get_current_buf(), native_output_buf)
+  native_output_app:shutdown()
+  expect('App shutdown clears native task output ownership', native_runner._has_output(root_five), false)
+
+  local custom_output_app = require('android_workbench.app').new { ports = ports }
+  shown, output_err = custom_output_app:show_task_output { root = root_five }
+  expect('custom runner output is not taken over', shown, nil)
+  expect('custom runner keeps output ownership', output_err.code, 'task_output_unavailable')
+  custom_output_app:shutdown()
+
   android.setup { ports = ports, logcat = { open_on_run = true } }
   expect('setup performs no trust check', next(trust_calls), nil)
   expect('setup performs no discovery', next(discovery_calls), nil)
@@ -608,16 +699,22 @@ local ok, unexpected = xpcall(function()
     require('android_workbench.actions').available({ logcat = 'stopped', selection = {} })[1].argv,
     { 'build' }
   )
+  expect_true(
+    'latest native task output is discoverable in the action palette',
+    vim.tbl_contains(action_ids { logcat = 'stopped', task_output = true, selection = {} }, 'show_task_output')
+  )
 
   local command = require 'android_workbench.command'
   local original_execute = command.execute
   local original_start_emulator = android.start_emulator
   local original_stop_emulator = android.stop_emulator
   local original_gradle_task = android.gradle_task
+  local original_show_task_output = android.show_task_output
   local emulator_command_calls = {}
   android.start_emulator = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'start', context = captured_context } end
   android.stop_emulator = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'stop', context = captured_context } end
   android.gradle_task = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'gradle', context = captured_context } end
+  android.show_task_output = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'output', context = captured_context } end
   local command_context = { root = root_one, path = '/captured/android/source.kt', bufnr = 37 }
   expect('emulator start command dispatches', original_execute({ 'emulator', 'start' }, command_context), true)
   expect('emulator start command uses facade', emulator_command_calls[1], { action = 'start', context = command_context })
@@ -626,12 +723,16 @@ local ok, unexpected = xpcall(function()
   expect('Gradle command dispatches', original_execute({ 'gradle' }, command_context), true)
   expect('Gradle command uses facade', emulator_command_calls[3], { action = 'gradle', context = command_context })
   expect('Gradle command rejects raw arguments', original_execute({ 'gradle', '--info' }, command_context), false)
+  expect('output command dispatches', original_execute({ 'output' }, command_context), true)
+  expect('output command uses facade', emulator_command_calls[4], { action = 'output', context = command_context })
   android.start_emulator = original_start_emulator
   android.stop_emulator = original_stop_emulator
   android.gradle_task = original_gradle_task
+  android.show_task_output = original_show_task_output
   expect('emulator start facade is public', type(android.start_emulator), 'function')
   expect('emulator stop facade is public', type(android.stop_emulator), 'function')
   expect('Gradle-task facade is public', type(android.gradle_task), 'function')
+  expect('task-output facade is public', type(android.show_task_output), 'function')
   hold_picker = true
   pending_picker = nil
   local notification_count = #notifications

@@ -78,8 +78,9 @@ command/plugin -> public facade -> App (composition root)
                                       +-> target + Gradle-task helpers
                                       +-> Device -> ADB + emulator + state
                                       +-> Execution -> runner
-                                      |                -> task operation
-                                      |                   -> problem parser
+                                      |                +-> task operation
+                                      |                |    -> problem parser
+                                      |                +-> native task output
                                       +-> Logcat presenter -> model + runner
                                       +-> picker + notifications + problem sink
 
@@ -209,9 +210,13 @@ source problems. Native process signaling and Overseer task lifecycle remain
 with their concrete adapters. The primitive is not a public generic-task
 framework.
 
-The native runner is dependency-free. Before the first public tag, its bounded
-captured output must have a visible, reopenable owner so locationless failures
-remain inspectable without requiring Overseer.
+The native runner is dependency-free. `task_output.lua` owns one latest
+count- and byte-bounded scratch view per canonical root. A native Gradle task
+opens its owned split without focus; `:Android output` reopens that same view
+after success or failure. Replacement and shutdown invalidate old view
+generations before late output can mutate a successor. Custom runners keep
+their own output and window policy; the runner port does not require native
+presentation methods.
 
 ### Problems
 
@@ -397,7 +402,7 @@ The standalone contract suites are organized by owner:
   protocol/model/task invariants and mutation rejection.
 - [`android-workbench-runner.lua`](../../tests/android-workbench-runner.lua):
   native/Overseer task parity, capture bounds, delivery order, cancellation,
-  and exactly-once terminals.
+  exactly-once terminals, and native output ownership, bounds, and reopen.
 - [`android-workbench-problems.lua`](../../tests/android-workbench-problems.lua):
   parsing, normalization, quickfix ownership, diagnostics, and clearing.
 - [`android-workbench-execution.lua`](../../tests/android-workbench-execution.lua):
@@ -429,6 +434,6 @@ checkpoint status or compatibility claims in this document.
 
 The standalone extraction preserves the existing runtime namespace, command,
 state path, and bundled provider layout. It does not itself close the known
-runtime containment, default output, API, licensing, compatibility, or release
-gates. Those are listed in `docs/roadmap.md` and must be completed as focused
-changes rather than folded into unrelated feature work.
+API, licensing, compatibility, or release gates. Those are listed in
+`docs/roadmap.md` and must be completed as focused changes rather than folded
+into unrelated feature work.

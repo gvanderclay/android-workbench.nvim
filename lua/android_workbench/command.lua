@@ -1,11 +1,11 @@
 local M = {}
 
-local SUBCOMMANDS = { 'build', 'cancel', 'emulator', 'gradle', 'logcat', 'refresh', 'run', 'status', 'stop', 'target' }
+local SUBCOMMANDS = { 'build', 'cancel', 'emulator', 'gradle', 'logcat', 'output', 'refresh', 'run', 'status', 'stop', 'target' }
 local EMULATOR_ACTIONS = { 'start', 'stop' }
 local LOGCAT_ACTIONS = { 'stop' }
 local TARGETS = { 'app', 'device', 'variant' }
 local USAGE =
-  'Usage: :Android [build | run | gradle | stop | cancel | emulator start | emulator stop | logcat [stop] | status | refresh | target app | target variant | target device]'
+  'Usage: :Android [build | run | gradle | output | stop | cancel | emulator start | emulator stop | logcat [stop] | status | refresh | target app | target variant | target device]'
 
 local function matches(candidates, lead)
   local result = {}
@@ -78,6 +78,11 @@ function M.execute(args, context)
       return true
     end
     return invalid 'The gradle command does not accept arguments.'
+  end
+
+  if subcommand == 'output' and #args == 1 then
+    android.show_task_output(context)
+    return true
   end
 
   if subcommand == 'stop' and #args == 1 then

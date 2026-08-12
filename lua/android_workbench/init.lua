@@ -184,6 +184,20 @@ function M.run(opts, callback) return app():run(context(opts), callback_or_noop(
 function M.gradle_task(opts, callback) return app():gradle_task(context(opts), callback_or_noop(callback)) end
 
 ---@param opts? table
+---@return boolean? shown
+---@return table|string? error
+function M.show_task_output(opts)
+  local shown, err = app():show_task_output(context(opts))
+  err = copy_public_dto(err)
+  if not shown then M._notify {
+    level = 'error',
+    code = 'task_output_failed',
+    message = error_message(err),
+  } end
+  return shown, err
+end
+
+---@param opts? table
 ---@param callback? fun(error: table|string|nil, result: table|nil)
 ---@return table? handle
 function M.start_emulator(opts, callback) return app():start_emulator(context(opts), callback_or_noop(callback)) end

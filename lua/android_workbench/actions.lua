@@ -29,6 +29,8 @@ local function logcat_running(status) return status.logcat == 'running' end
 
 local function logcat_active(status) return status.logcat == 'starting' or logcat_running(status) end
 
+local function task_output_available(status) return status.task_output == true end
+
 local registry = {
   { id = 'build', label = 'Build', argv = { 'build' }, predicate = idle },
   { id = 'run', label = 'Run', argv = { 'run' }, predicate = idle },
@@ -45,6 +47,7 @@ local registry = {
     predicate = function(status) return status.operation == 'gradle_task' end,
   },
   { id = 'cancel_stop', label = 'Cancel stop', argv = { 'cancel' }, predicate = function(status) return status.operation == 'stop' end },
+  { id = 'show_task_output', label = 'Show task output', argv = { 'output' }, predicate = task_output_available },
   {
     id = 'cancel_emulator_start',
     label = 'Cancel emulator start',

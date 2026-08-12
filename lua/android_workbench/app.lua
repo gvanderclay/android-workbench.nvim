@@ -205,6 +205,7 @@ function M.new(config)
   local discovery = ports.discovery or require 'android_workbench.gradle.discovery'
   local adb = ports.adb or Adb.new()
   local runner = ports.runner or Runner.new()
+  local task_output = Runner._is_native(runner) and runner or nil
   local picker = ports.picker or default_picker()
   local notifications = ports.notifications or default_notifications()
   local problems = ports.problems or require('android_workbench.integrations.quickfix').new()
@@ -229,6 +230,7 @@ function M.new(config)
     adb = adb,
     devices = devices,
     execution = Execution.new { runner = runner, adb = adb },
+    task_output = task_output,
     logcat = logcat,
     logcat_options = config.logcat or { open_on_run = false },
     run_options = config.run or { start_stopped_avd = true },
@@ -244,6 +246,12 @@ function M.new(config)
     logcat_starts = {},
     closed = false,
   }, App)
+end
+
+function App:_has_task_output(root)
+  if not self.task_output then return false end
+  local ok, available = pcall(self.task_output._has_output, root)
+  return ok and available == true
 end
 
 function App:_emit(level, message)
@@ -346,7 +354,22 @@ function App:status(context)
   local status = session:status()
   status.operation = self.active[session.root] and self.active[session.root].kind or nil
   status.logcat = self.logcats[session.root] and 'running' or (self.logcat_starts[session.root] and 'starting' or 'stopped')
+  status.task_output = self:_has_task_output(session.root)
   return status
+end
+
+function App:show_task_output(context)
+  local session, err = self:_session(context)
+  if not session then return nil, err end
+  if not self.task_output then return nil, workbench_error('task_output_unavailable', 'The configured runner owns its task output.', session.root) end
+  if not self:_has_task_output(session.root) then
+    return nil, workbench_error('no_task_output', ('No Android task output is available for %s.'):format(session.root), session.root)
+  end
+  local ok, shown = pcall(self.task_output._show_output, session.root)
+  if not ok or shown ~= true then
+    return nil, workbench_error('task_output_open_failed', ('Could not open Android task output for %s.'):format(session.root), session.root)
+  end
+  return true
 end
 
 ---@param context? table
@@ -373,6 +396,7 @@ function App:open_actions(context, dispatch)
   local status = session:status()
   status.operation = self.active[session.root] and self.active[session.root].kind or nil
   status.logcat = self.logcats[session.root] and 'running' or (self.logcat_starts[session.root] and 'starting' or 'stopped')
+  status.task_output = self:_has_task_output(session.root)
 
   local items = Actions.available(status)
   action_context = {
@@ -1249,6 +1273,9 @@ end
 function App:shutdown()
   if self.closed then return false end
   self.closed = true
+  local task_output = self.task_output
+  self.task_output = nil
+  if task_output then pcall(task_output._close_output) end
   local operations = self.operations
   self.operations = {}
   self.active = {}

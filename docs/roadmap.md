@@ -95,11 +95,11 @@ Workbench already executes direct argv.
 
 ### R2.1 Inspectable native task output
 
-- [ ] Add a bounded visible and reopenable owner for native runner output.
-- [ ] Keep recognized source problems in the configured problem sink while
+- [x] Add a bounded visible and reopenable owner for native runner output.
+- [x] Keep recognized source problems in the configured problem sink while
   leaving complete locationless/unrecognized failure output inspectable.
-- [ ] Do not make Overseer required and do not add automatic provider detection.
-- [ ] Prove command users can reopen the latest root/task output after terminal
+- [x] Do not make Overseer required and do not add automatic provider detection.
+- [x] Prove command users can reopen the latest root/task output after terminal
   success or failure without taking over unrelated buffers or windows.
 
 ### R2.2 Deliberate pre-1.0 API

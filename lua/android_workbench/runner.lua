@@ -1,8 +1,10 @@
 local TaskOperation = require 'android_workbench.task_operation'
+local TaskOutput = require 'android_workbench.task_output'
 
 local M = {}
 
 local DEFAULT_KILL_GRACE_MS = 1000
+local native_instances = setmetatable({}, { __mode = 'k' })
 
 local function close_timer(timer)
   if not timer then return end
@@ -11,10 +13,11 @@ local function close_timer(timer)
   if not ok or not closing then pcall(timer.close, timer) end
 end
 
----@param opts? { system?: function, schedule?: fun(callback: function), defer_fn?: fun(callback: function, timeout: integer): table, max_capture_bytes?: integer, kill_grace_ms?: integer }
+---@param opts? { system?: function, schedule?: fun(callback: function), defer_fn?: fun(callback: function, timeout: integer): table, max_capture_bytes?: integer, max_output_bytes?: integer, max_output_lines?: integer, height?: integer, kill_grace_ms?: integer }
 ---@return { start: fun(request: table, callback: function): table }
 function M.new(opts)
   opts = opts or {}
+  if type(opts) ~= 'table' then error('android_workbench.runner.new: options must be a table', 2) end
   local system = opts.system or vim.system
   local operation_opts = {
     schedule = opts.schedule,
@@ -25,11 +28,28 @@ function M.new(opts)
   if operation_opts.max_capture_bytes ~= nil and not TaskOperation.valid_limit(operation_opts.max_capture_bytes) then
     error('android_workbench.runner.new: max_capture_bytes must be a positive integer', 2)
   end
+  if opts.max_output_bytes ~= nil and not TaskOperation.valid_limit(opts.max_output_bytes) then
+    error('android_workbench.runner.new: max_output_bytes must be a positive integer', 2)
+  end
+  if opts.max_output_lines ~= nil and not TaskOperation.valid_limit(opts.max_output_lines) then
+    error('android_workbench.runner.new: max_output_lines must be a positive integer', 2)
+  end
+  if opts.height ~= nil and not TaskOperation.valid_limit(opts.height) then error('android_workbench.runner.new: height must be a positive integer', 2) end
   if not TaskOperation.valid_limit(kill_grace_ms) then error('android_workbench.runner.new: kill_grace_ms must be a positive integer', 2) end
+  local output = TaskOutput.new {
+    max_bytes = opts.max_output_bytes,
+    max_lines = opts.max_output_lines,
+    height = opts.height,
+  }
 
-  return {
+  local runner = {
     start = function(request, callback)
-      local operation = TaskOperation.new(request, callback, operation_opts)
+      assert(type(callback) == 'function', 'android_workbench.runner: callback is required')
+      local view
+      local operation = TaskOperation.new(request, function(err, result)
+        if view then pcall(view.finish, err, result) end
+        callback(err, result)
+      end, operation_opts)
       local process
       local terminal_error
       local cancel_requested = false
@@ -79,6 +99,16 @@ function M.new(opts)
       end
 
       if operation:is_done() then return handle end
+
+      local presented, created = pcall(output.start, operation.request)
+      if presented then view = created end
+      if view then
+        local downstream_output = operation.request.on_output
+        operation.request.on_output = function(event)
+          pcall(view.append, event)
+          if downstream_output then pcall(downstream_output, event) end
+        end
+      end
 
       local function consume(stream, err, data)
         if operation:is_done() or cancel_requested or terminal_error then return end
@@ -144,7 +174,14 @@ function M.new(opts)
       return handle
     end,
   }
+  function runner._show_output(root, show_opts) return output.show(root, show_opts) end
+  function runner._has_output(root) return output.has_output(root) end
+  function runner._close_output() return output.close() end
+  native_instances[runner] = true
+  return runner
 end
+
+function M._is_native(runner) return native_instances[runner] == true end
 
 return M
 

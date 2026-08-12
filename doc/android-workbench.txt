@@ -18,7 +18,7 @@ The current implementation supports trusted Gradle discovery, root-isolated
 state, persistent application/variant/device selection, AVD discovery and
 emulator start/stop, Gradle builds, install and launch, application stop,
 cancellation, arbitrary registered Gradle tasks, navigable Gradle build errors,
-and app-scoped Logcat.
+inspectable native task output, and app-scoped Logcat.
 
 ==============================================================================
 2. SETUP                                               *android-workbench-setup*
@@ -80,10 +80,36 @@ currently displays that exact owned list; it never selects or closes an
 unrelated user or plugin list, and quickfix history remains available. A
 cancelled task preserves the prior quickfix list and diagnostic projection.
 Unrecognized and locationless failures remain in the configured runner output.
+The native runner opens a non-focused split below the current window when a
+Build, Run, or arbitrary Gradle task starts. Its scratch buffer retains the
+latest task for each canonical root, bounded to 10,000 lines and 4 MiB of
+combined output. Starting another task for that root replaces the retained
+output. Press `q` to hide the split without cancelling the task, `f` to toggle
+following its newest line, and use |:Android-output| to reopen it after success
+or failure. The window-local bar shows the task, terminal state, root,
+truncation, and follow state.
 
-Android Workbench defines no keymaps and has no key-hint integration. A
-consuming configuration may add mappings to the commands below and provide
-native `desc` values for a key-hint UI.
+The native output limits and split height can be changed by explicitly
+constructing the native runner: >lua
+
+  local runner = require('android_workbench.runner').new({
+    max_output_bytes = 4 * 1024 * 1024,
+    max_output_lines = 10000,
+    height = 12,
+  })
+  require('android_workbench').setup({
+    ports = { runner = runner },
+  })
+<
+An injected custom runner keeps complete ownership of its output UI. In that
+case |:Android-output| reports that native output is unavailable; it does not
+inspect or replace the custom runner's windows. The Overseer example above
+continues to use `:OverseerToggle! bottom`.
+
+Android Workbench defines no global mappings and has no key-hint integration.
+Its owned Logcat and native task-output buffers define only their documented
+buffer-local controls. A consuming configuration may add mappings to the
+commands below and provide native `desc` values for a key-hint UI.
 
 The available ports are `adb`, `emulator`, `runner`, `logcat`, `picker`,
 `trust`, `notifications`, `problems`, `state`, and `discovery`. Each is one
@@ -280,7 +306,8 @@ Malformed, partial, aliased, or identity-inconsistent results are rejected.
         Run the selected target's exact qualified assemble task. The configured
         runner owns task execution and live output. Recognized source errors
         are published through the configured problem sink after the task result
-        is accepted.
+        is accepted. The native runner opens its root-owned output split without
+        moving focus.
 
                                                      *:Android-gradle*
 :Android gradle
@@ -312,6 +339,17 @@ Malformed, partial, aliased, or identity-inconsistent results are rejected.
         parent/include relationships; discovery fails closed when a nested or
         repeated include cannot be identified uniquely. Gradle 9.1 and newer
         use Gradle's public `buildPath`.
+
+                                                     *:Android-output*
+:Android output
+        Reopen and focus the latest native Build, Run, or arbitrary Gradle-task
+        output for the current canonical root. The buffer remains available
+        after success or failure until another task for that root replaces it
+        or Android Workbench shuts down. It never selects or replaces an
+        unrelated buffer or window.
+
+        This command applies only to the dependency-free native runner. A
+        configured custom runner retains its own output and window policy.
 
 :Android run
         Run the selected target's exact qualified install task with

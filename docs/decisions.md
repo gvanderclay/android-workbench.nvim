@@ -131,7 +131,10 @@ vimdoc and tests.
   presentation-neutral. Problem DTOs carry normalized absolute paths,
   one-based positions, bounded messages, severity, and truncation state.
   Reveal/close behavior belongs to a constructed sink, not top-level setup.
-  Trouble is never required or opened automatically.
+  Trouble is never required or opened automatically. The dependency-free
+  native runner separately owns one latest bounded output view per canonical
+  root and reopens it through `:Android output`; custom runners retain their own
+  output and window policy.
 - **Revisit when:** Real output justifies another recognized format, a second
   presenter needs additional neutral data, or the terminal policy must represent
   a demonstrated workflow that the current batch cannot express.

@@ -343,6 +343,16 @@ local ok, unexpected = xpcall(function()
   expect('invalid request is classified', invalid.code, 'invalid_request')
   expect('invalid request does not spawn', invocation, before_invalid)
 
+  for _, case in ipairs {
+    { option = 'max_output_bytes', value = 0 },
+    { option = 'max_output_lines', value = 1.5 },
+    { option = 'height', value = math.huge },
+  } do
+    local valid, err = pcall(Runner.new, { [case.option] = case.value })
+    expect(case.option .. ' rejects an invalid bound', valid, false)
+    expect_true(case.option .. ' error names the option', tostring(err):find(case.option, 1, true) ~= nil)
+  end
+
   local real_completed
   Runner.new().start({
     argv = { '/bin/sh', '-c', "printf 'native-out'; printf 'native-err' >&2" },
@@ -355,6 +365,182 @@ local ok, unexpected = xpcall(function()
   expect('real native process succeeds', real_completed.result.status, 'success')
   expect('real native stdout is captured', real_completed.result.stdout, 'native-out')
   expect('real native stderr is captured', real_completed.result.stderr, 'native-err')
+
+  local output_calls = {}
+  local output_runner = Runner.new {
+    schedule = immediate,
+    max_output_bytes = 256,
+    max_output_lines = 8,
+    height = 5,
+    system = function(argv, options, on_exit)
+      output_calls[#output_calls + 1] = { argv = argv, options = options, on_exit = on_exit }
+      return { kill = function() return true end }
+    end,
+  }
+  local origin_win = vim.api.nvim_get_current_win()
+  local origin_buf = vim.api.nvim_win_get_buf(origin_win)
+  local output_completed
+  local downstream_output = {}
+  output_runner.start({
+    argv = { '/project/gradlew', ':app:assembleDebug' },
+    cwd = '/project',
+    name = 'Android build :app · debug',
+    metadata = { kind = 'android-build', root = '/project' },
+    on_output = function(event) downstream_output[#downstream_output + 1] = event end,
+  }, function(err, result) output_completed = { err = err, result = result } end)
+
+  local output_buf
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].filetype == 'androidtaskoutput' then output_buf = bufnr end
+  end
+  expect_true('native Gradle task creates an owned output buffer', output_buf ~= nil)
+  expect('native output opens without moving focus', vim.api.nvim_get_current_win(), origin_win)
+  expect('native output leaves the origin buffer alone', vim.api.nvim_win_get_buf(origin_win), origin_buf)
+  expect('native runner exposes an internal reopen operation', type(output_runner._show_output), 'function')
+
+  if output_buf then
+    local output_win = vim.fn.bufwinid(output_buf)
+    expect_true('native Gradle output is visible while the task runs', output_win ~= -1)
+    expect('native output buffer is a scratch buffer', vim.bo[output_buf].buftype, 'nofile')
+    expect('native output buffer is not writable', vim.bo[output_buf].modifiable, false)
+    local hide_mapping
+    local follow_mapping
+    for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(output_buf, 'n')) do
+      if mapping.lhs == 'q' then hide_mapping = mapping end
+      if mapping.lhs == 'f' then follow_mapping = mapping end
+    end
+    expect('native output has a local hide mapping', hide_mapping and hide_mapping.desc, 'Hide Android task output')
+    expect('native output has a local follow mapping', follow_mapping and follow_mapping.desc, 'Toggle Android task output follow')
+    expect_true('native output bar shows follow state beside its key', vim.wo[output_win].winbar:find('[f] follow:on', 1, true) ~= nil)
+    if follow_mapping and follow_mapping.callback then
+      follow_mapping.callback()
+      expect_true('native follow mapping visibly turns follow off', vim.wo[output_win].winbar:find('[f] follow:off', 1, true) ~= nil)
+      follow_mapping.callback()
+      expect_true('native follow mapping visibly turns follow on', vim.wo[output_win].winbar:find('[f] follow:on', 1, true) ~= nil)
+    end
+
+    output_calls[1].options.stdout(nil, 'Could not resolve dependency com.example:missing:1\nTry --stacktrace\n')
+    output_calls[1].options.stderr(nil, 'BUILD FAILED')
+    output_calls[1].on_exit { code = 1, signal = 0 }
+    expect('native locationless failure remains inspectable', vim.api.nvim_buf_get_lines(output_buf, 0, -1, false), {
+      'Could not resolve dependency com.example:missing:1',
+      'Try --stacktrace',
+      'BUILD FAILED',
+    })
+    expect('native locationless failure completes normally', output_completed.result.status, 'failure')
+    expect('native output remains available to the downstream parser', downstream_output, {
+      { stream = 'stdout', data = 'Could not resolve dependency com.example:missing:1\nTry --stacktrace\n' },
+      { stream = 'stderr', data = 'BUILD FAILED' },
+    })
+    expect_true('native output bar shows failure', vim.wo[output_win].winbar:find('FAILURE', 1, true) ~= nil)
+
+    vim.api.nvim_win_close(output_win, true)
+    expect('hiding output preserves its buffer', vim.api.nvim_buf_is_valid(output_buf), true)
+    if type(output_runner._show_output) == 'function' then
+      expect('latest root output can be reopened', output_runner._show_output '/project', true)
+      expect('reopen focuses only the owned output buffer', vim.api.nvim_get_current_buf(), output_buf)
+    end
+
+    local succeeded
+    output_runner.start({
+      argv = { '/project/gradlew', ':app:assembleDebug' },
+      cwd = '/project',
+      name = 'Android build :app · debug',
+      metadata = { kind = 'android-build', root = '/project' },
+    }, function(err, result) succeeded = { err = err, result = result } end)
+    output_calls[2].options.stdout(nil, 'BUILD SUCCESSFUL')
+    output_calls[2].on_exit { code = 0, signal = 0 }
+    expect('a newer root task replaces the prior output', vim.api.nvim_buf_get_lines(output_buf, 0, -1, false), { 'BUILD SUCCESSFUL' })
+    expect('native successful task completes normally', succeeded.result.status, 'success')
+    output_win = vim.fn.bufwinid(output_buf)
+    expect_true('native output bar shows success', vim.wo[output_win].winbar:find('SUCCESS', 1, true) ~= nil)
+    vim.api.nvim_win_close(output_win, true)
+    expect('successful output can be reopened', output_runner._show_output '/project', true)
+  end
+
+  local bounded_calls = {}
+  local bounded_runner = Runner.new {
+    schedule = immediate,
+    max_output_bytes = 18,
+    max_output_lines = 2,
+    system = function(_, options, on_exit)
+      bounded_calls[#bounded_calls + 1] = { options = options, on_exit = on_exit }
+      return { kill = function() return true end }
+    end,
+  }
+  bounded_runner.start({
+    argv = { '/bounded/gradlew', ':app:assembleDebug' },
+    cwd = '/bounded',
+    name = 'Bounded build',
+    metadata = { kind = 'android-build', root = '/bounded' },
+  }, function() end)
+  local bounded_buf
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_get_name(bufnr):find('android-task-output://', 1, true) then
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      if #lines == 1 and lines[1] == '' and bufnr ~= output_buf then bounded_buf = bufnr end
+    end
+  end
+  bounded_calls[1].options.stdout(nil, 'first\nsecond\nthird')
+  if bounded_buf then
+    local lines = vim.api.nvim_buf_get_lines(bounded_buf, 0, -1, false)
+    expect('native output line bound keeps the newest lines', lines, { '… earlier output truncated …', 'second', 'third' })
+    bounded_calls[1].options.stdout(nil, '012345678901234567890')
+    lines = vim.api.nvim_buf_get_lines(bounded_buf, 0, -1, false)
+    expect_true('native output byte bound is marked', lines[1] == '… earlier output truncated …')
+    expect_true('native output raw text stays byte bounded', #table.concat(vim.list_slice(lines, 2), '\n') <= 18)
+  else
+    fail('bounded native output buffer', 'expected a root-owned output buffer')
+  end
+  bounded_calls[1].on_exit { code = 1, signal = 0 }
+  bounded_runner._close_output()
+
+  local gap_callbacks, gap_schedule, gap_flush = queued_scheduler()
+  local gap_call
+  local gap_runner = Runner.new {
+    schedule = gap_schedule,
+    max_capture_bytes = 8,
+    system = function(_, options, on_exit)
+      gap_call = { options = options, on_exit = on_exit }
+      return { kill = function() return true end }
+    end,
+  }
+  gap_runner.start({
+    argv = { '/gap/gradlew', ':app:assembleDebug' },
+    cwd = '/gap',
+    name = 'Gap build',
+    metadata = { kind = 'android-build', root = '/gap' },
+  }, function() end)
+  gap_call.options.stdout(nil, 'stale partial')
+  gap_call.options.stdout(nil, '0123456789')
+  expect('native output backlog keeps one scheduled drain', #gap_callbacks, 1)
+  gap_flush()
+  expect('gap output can be shown', gap_runner._show_output '/gap', true)
+  expect('delivery truncation never stitches across the gap', vim.api.nvim_buf_get_lines(0, 0, -1, false), {
+    '… earlier output truncated …',
+    '23456789',
+  })
+  gap_call.on_exit { code = 1, signal = 0 }
+  gap_flush()
+  gap_runner._close_output()
+
+  local late_completed
+  output_runner.start({
+    argv = { '/project/gradlew', ':app:assembleDebug' },
+    cwd = '/project',
+    name = 'Late build',
+    metadata = { kind = 'android-build', root = '/project' },
+  }, function(err, result) late_completed = { err = err, result = result } end)
+  local late_buf
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].filetype == 'androidtaskoutput' and bufnr ~= bounded_buf then late_buf = bufnr end
+  end
+  output_runner._close_output()
+  expect('closing the native owner deletes its retained output', late_buf and vim.api.nvim_buf_is_valid(late_buf), false)
+  output_calls[3].options.stdout(nil, 'late output after shutdown')
+  output_calls[3].on_exit { code = 0, signal = 0 }
+  expect('late native task still reaches its private terminal', late_completed.result.status, 'success')
+  expect('late output cannot recreate a closed root view', output_runner._has_output '/project', false)
 
   local task_definition
   local task

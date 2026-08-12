@@ -41,6 +41,7 @@ local ok, unexpected = xpcall(function()
   end
 
   expect_true('static completion exposes target actions', vim.tbl_contains(vim.fn.getcompletion('Android t', 'cmdline'), 'target'))
+  expect_true('static completion exposes native task output', vim.tbl_contains(vim.fn.getcompletion('Android o', 'cmdline'), 'output'))
   expect('completion loads only the command layer', type(package.loaded['android_workbench.command']), 'table')
   unloaded 'android_workbench.app'
   unloaded 'android_workbench.android.adb'
