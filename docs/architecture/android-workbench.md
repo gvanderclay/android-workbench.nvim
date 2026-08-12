@@ -41,21 +41,39 @@ or execute Gradle.
 
 [`android_workbench/init.lua`](../../lua/android_workbench/init.lua) is the Lua
 facade. It owns setup, contextual argument normalization, the lazy singleton,
-public callbacks, and notification fallback. `setup()` validates and stores
-configuration only; it must run before the first action and must not resolve a
-root, load state, create a session, prompt for trust, or start work. The first
-action constructs `App`.
+and public callbacks. Private `notify.lua` owns command/facade notification
+fallback. `setup()` validates and stores configuration only; it must run before
+the first action and must not resolve a root, load state, create a session,
+prompt for trust, or start work. The first action constructs `App`.
 
-The facade currently exposes status and action discovery, model refresh, target
-selection, emulator start/stop, Build/Run/application Stop, arbitrary Gradle
-tasks, Logcat start/stop, cancellation, and shutdown. The exact supported
-pre-1.0 result and error surface is still a roadmap decision. Lua modules are
-not public merely because they can be required; `App`, `Session`, root/device
-services, task operations, and model helpers remain internal.
+The supported pre-1.0 facade exposes setup, status and action discovery, model
+refresh, target selection, emulator start/stop, Build/Run/application Stop,
+arbitrary Gradle tasks, native task-output reopen, Logcat start/stop,
+cancellation, and shutdown. `setup()` returns no internal configuration data.
+Notification fallback is owned by a private module rather than an accidental
+`_notify` facade member.
+
+Root-aware facade calls accept only `bufnr`, `path`, and `root` context fields.
+Invalid setup, context, callback, and target-kind inputs are programmer errors
+and throw before an action starts. Operational failures cross the facade as
+closed owned `{ code, message, root?, details? }` tables. Public async
+callbacks use `(error, result)`, may complete synchronously, and receive exactly
+one terminal while their application generation remains live. Failure never
+also returns a result. Shutdown explicitly revokes pending callback delivery;
+late children remain private, and a later action constructs a new generation.
+
+The facade, health entry, and constructor modules explicitly named in vimdoc
+are intentional pre-1.0 entry points. Lua modules are not public merely because
+they can be required; `App`, `Session`, root/device services, configuration,
+command/action helpers, notification fallback, task operations, state, and
+model helpers remain internal. R2.3 separately classifies injected port DTO
+stability.
 
 The facade owns the mutable DTO members it returns through status, synchronous
-errors, and async callbacks. It copies those members at the public boundary
-while preserving operation and Logcat handle identity.
+errors, and async callbacks. It exposes only the documented error fields and
+copies result members at the public boundary while preserving operation and
+Logcat handle identity. Extra nested adapter fields are not supported merely
+because they survive normalization today.
 
 Root-aware status and action-menu requests may resolve a wrapper and read
 private selection state. They still must not authorize project code, discover a
@@ -295,10 +313,11 @@ Except for ADB and emulator services, adapter entry points are plain functions
 without implicit `self`. Returned handles are method-like and tolerate
 `handle:cancel()`, `handle:show()`, or `handle:stop()` as applicable.
 
-Async callbacks use `(error, value)`, may run synchronously or later, and must
-reach one terminal result. Expected failures use callback/return errors rather
-than exceptions. Structured errors should include `code` and `message`; an
-owning boundary normalizes unexpected strings or exceptions before public use.
+Async port callbacks use `(error, value)`, may run synchronously or later, and
+must reach one terminal result. Expected failures use callback/return errors
+rather than exceptions. Port errors should include `code` and `message`; the
+public facade normalizes unexpected strings, exceptions, or malformed tables
+before returning them and never pairs a public error with a result.
 
 Ports exchange neutral owned DTOs, not `App`, `Session`, provider tasks,
 quickfix IDs, or buffer/window policy. Identity-bearing returns are revalidated

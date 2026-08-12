@@ -5,8 +5,9 @@ CONTENTS                                                *android-workbench*
 
 1. Introduction.................................|android-workbench-introduction|
 2. Setup...............................................|android-workbench-setup|
-3. Commands..........................................|android-workbench-commands|
-4. Trust and discovery.................................|android-workbench-trust|
+3. Lua API...............................................|android-workbench-api|
+4. Commands..........................................|android-workbench-commands|
+5. Trust and discovery.................................|android-workbench-trust|
 
 ==============================================================================
 1. INTRODUCTION                                 *android-workbench-introduction*
@@ -250,7 +251,190 @@ the complete snapshot before caching it. It also passes an owned copy to
 Malformed, partial, aliased, or identity-inconsistent results are rejected.
 
 ==============================================================================
-3. COMMANDS                                          *android-workbench-commands*
+3. LUA API                                               *android-workbench-api*
+
+The supported pre-1.0 Lua facade is returned by: >lua
+
+  local android = require('android_workbench')
+<
+Its public functions are listed below. `setup()` is optional, validates and
+stores configuration only, and returns no value. Invalid setup options,
+contexts, callbacks, or target kinds are programmer errors and throw before an
+Android action starts.
+
+                                                   *android-workbench.setup()*
+  android.setup(opts)
+
+                                             *android-workbench.open_actions()*
+  handle = android.open_actions(context)
+
+                                                   *android-workbench.status()*
+                                              *android-workbench.show_status()*
+  status, err = android.status(context)
+  status, err = android.show_status(context)
+
+                                                  *android-workbench.refresh()*
+                                            *android-workbench.select_target()*
+                                                    *android-workbench.build()*
+                                                      *android-workbench.run()*
+                                              *android-workbench.gradle_task()*
+                                           *android-workbench.start_emulator()*
+                                            *android-workbench.stop_emulator()*
+                                                     *android-workbench.stop()*
+                                                   *android-workbench.logcat()*
+  handle = android.refresh(context, callback)
+  handle = android.select_target(kind, context, callback)
+  handle = android.build(context, callback)
+  handle = android.run(context, callback)
+  handle = android.gradle_task(context, callback)
+  handle = android.start_emulator(context, callback)
+  handle = android.stop_emulator(context, callback)
+  handle = android.stop(context, callback)
+  handle = android.logcat(context, callback)
+
+                                         *android-workbench.show_task_output()*
+                                             *android-workbench.stop_logcat()*
+                                                  *android-workbench.cancel()*
+  shown, err = android.show_task_output(context)
+  stopped, err = android.stop_logcat(context)
+  cancelled, err = android.cancel(context)
+
+                                                *android-workbench.shutdown()*
+  android.shutdown()
+
+`kind` for `select_target()` is `app`, `variant`, or `device`. Callbacks are
+optional; command users normally omit them.
+
+CONTEXT
+
+Every root-aware facade function accepts `nil` or a context containing only: >lua
+
+  {
+    bufnr = 0,                  -- non-negative buffer number
+    path = '/project/Main.kt', -- non-empty path
+    root = '/project',         -- non-empty root hint
+  }
+<
+All fields are optional. `root` takes precedence over `path`, which takes
+precedence over `bufnr`. Without `path`, Workbench uses the named buffer path,
+then the current working directory for an unnamed buffer. The value is still a
+root-discovery input: Workbench resolves and canonicalizes the directory that
+owns `gradlew` rather than trusting a caller-supplied canonical identity.
+
+CALLBACKS AND HANDLES
+
+Async callbacks use `callback(error, result)`. They may run synchronously
+before the facade function returns or later on Neovim's main loop. A live
+operation reaches its callback exactly once. On operational failure, `error`
+is present and `result` is `nil`. A successful picker dismissal may return
+`nil, nil` because no action was selected.
+
+Async facade functions return a handle with method-style `handle:cancel()`.
+It returns `true` when cancellation is accepted and `false` after terminal
+completion or when the current child refuses cancellation. Acceptance does not
+mean the child has exited yet; the callback arrives when the owned terminal is
+accepted. |android-workbench.cancel()| applies the same rule to the current
+root operation.
+
+|android-workbench.shutdown()| is the deliberate exception to terminal callback
+delivery. It irreversibly revokes the current application instance, closes its
+owned views and sessions, attempts child cancellation, and suppresses every
+pending public callback and late outward side effect. A later facade action
+constructs a fresh independent instance. `setup()` may configure that new
+instance before its first action.
+
+RESULTS
+
+`status()` and successful refresh/selection callbacks return: >lua
+
+  {
+    root = '/canonical/project',
+    wrapper = '/canonical/project/gradlew',
+    phase = 'idle', -- idle, discovering, ready, or error
+    authorized = false,
+    targets = 0,
+    selection = {
+      app = { build_path = ':', project_path = ':app' }, -- optional
+      variant = 'debug',                                -- optional
+      device = { serial = '...', avd_name = '...' },    -- optional
+    },
+    operation = nil,
+    logcat = 'stopped', -- stopped, starting, or running
+    task_output = false,
+    error = nil,
+  }
+<
+Successful action results guarantee these fields:
+
+  build          `{ kind = 'build', target, task }`
+  run            `{ kind = 'run', target, device, component, task }`
+  gradle_task    `{ kind = 'gradle_task', gradle_task, task }`
+  stop           `{ kind = 'stop', target, device }`
+  start_emulator `{ kind = 'emulator_start', device }`
+  stop_emulator  `{ kind = 'emulator_stop', device }`
+  logcat         `{ kind = 'logcat', target, device, handle }`
+
+A target includes `id`, `build_path`, `build_root`, `project_path`,
+`project_dir`, `variant`, `application_id`, `assemble_task`, and optional
+`install_task`. A device includes its stable available identity: `serial`,
+optional `avd_name`, and optional `state`. A Gradle task includes `id`,
+`build_path`, `project_path`, and `name`. A launcher component includes
+`component`, `package`, and optional `activity`. The Logcat result handle
+supports method-style `handle:show(opts)` and `handle:stop()`.
+
+The nested task terminal guarantees `status`, `name`, `metadata`, `problems`,
+and `problems_truncated`, with optional `code`, `signal`, bounded `stdout` and
+`stderr`, and matching truncation flags when the runner supplies them. Extra
+adapter-specific fields may be present but are not part of the supported
+facade contract.
+
+All mutable status, result, and error data belongs to the caller. Mutation
+cannot change cached selection, a later task, or another result. Operation and
+Logcat handles deliberately retain identity; call their documented methods
+instead of copying or mutating them.
+
+ERRORS
+
+Operational failures returned synchronously or through a callback are closed
+owned tables: >lua
+
+  {
+    code = 'project_not_trusted',
+    message = 'Android project execution was not authorized.',
+    root = '/canonical/project', -- optional
+    details = {},                -- optional, action-specific and opaque
+  }
+<
+`code` is the machine-readable classification and `message` is the user-facing
+explanation. `root` is present when a canonical project is known. `details` is
+owned but has no general schema; do not parse it unless a specific workflow
+documents its contents. Unexpected adapter strings, exceptions, or malformed
+errors become `operation_failed` instead of escaping as another public shape.
+
+MODULES
+
+The facade above and the `android_workbench.health` entry used by
+`:checkhealth` are intentional. These constructor modules are also explicit
+pre-1.0 entry points because their constructors are documented in Setup:
+
+  android_workbench.runner
+  android_workbench.android.adb
+  android_workbench.android.emulator
+  android_workbench.gradle.discovery
+  android_workbench.logcat.native
+  android_workbench.integrations.telescope
+  android_workbench.integrations.overseer
+  android_workbench.integrations.quickfix
+  android_workbench.integrations.diagnostics
+
+R2.3 in the development roadmap separately classifies the exact stability of
+injected port DTOs. `app`, `session`, `root`, `device`, `execution`, `config`,
+`command`, `actions`, `notify`, `state`, `task_operation`, Gradle model/task
+helpers, and Logcat/problem models are private implementation modules. Lua can
+`require()` them, but reachability is not a support promise.
+
+==============================================================================
+4. COMMANDS                                          *android-workbench-commands*
 
                                                      *:Android*
 :Android
@@ -416,7 +600,7 @@ Commands have static completion. Completion never evaluates Gradle code,
 queries ADB, or enumerates AVDs.
 
 ==============================================================================
-4. TRUST AND DISCOVERY                                *android-workbench-trust*
+5. TRUST AND DISCOVERY                                *android-workbench-trust*
 
 Android discovery and Gradle Build/Run/arbitrary-task execution evaluate
 project-owned build logic. The default trust adapter calls |vim.secure.read()|

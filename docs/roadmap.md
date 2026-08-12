@@ -104,15 +104,15 @@ Workbench already executes direct argv.
 
 ### R2.2 Deliberate pre-1.0 API
 
-- [ ] Define the supported facade, module, context, callback, handle, result,
+- [x] Define the supported facade, module, context, callback, handle, result,
   and structured-error surface.
-- [ ] Remove, privatize, or explicitly support `_notify` and the current
+- [x] Remove, privatize, or explicitly support `_notify` and the current
   `setup()` return instead of exposing them accidentally.
-- [ ] Return owned DTOs, state callback timing and exactly-once rules, and
+- [x] Return owned DTOs, state callback timing and exactly-once rules, and
   document shutdown semantics.
-- [ ] Treat internal lifecycle/model modules as private even though Lua can
+- [x] Treat internal lifecycle/model modules as private even though Lua can
   require them.
-- [ ] Create an `Unreleased` changelog once the public surface is selected.
+- [x] Create an `Unreleased` changelog once the public surface is selected.
 
 ### R2.3 Port maturity
 

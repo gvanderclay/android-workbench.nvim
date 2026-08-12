@@ -232,6 +232,40 @@ vimdoc and tests.
 - **Revisit when:** No active consumer remains, another package boundary proves
   simpler, or the release roadmap selects a licensed stable API.
 
+## AN008 — Support one closed pre-1.0 facade
+
+- **Status:** Accepted
+- **Decision:** Treat `require('android_workbench')` as one closed action facade.
+  Support its documented setup, context, synchronous queries, async workflows,
+  handles, results, structured errors, and shutdown semantics. Keep command
+  notification fallback and reachable lifecycle/model modules private.
+- **Requirements:** Keep `setup()` optional and configuration-only with no
+  return value. Reject invalid programmer inputs before starting work. Normalize
+  operational failures to owned `{ code, message, root?, details? }` tables,
+  return no result beside an error, preserve lifecycle-handle identity, and
+  state the shutdown exception to callback delivery.
+- **Considered:** Treating every require-able module as public, continuing to
+  expose `_notify`, returning the private effective configuration from
+  `setup()`, allowing strings and open-ended tables as public errors, and
+  withholding all Lua APIs in favor of commands alone.
+- **Rationale:** Consumers need callable actions and explicit constructors, but
+  do not need composition-root or model internals. A closed facade catches
+  typos, prevents adapter details from becoming accidental promises, and gives
+  callbacks one error/result convention without widening the port layer.
+- **Tradeoffs:** This is an intentional `0.x` boundary rather than a `1.0`
+  compatibility guarantee. Constructor modules remain necessary for explicit
+  composition, while exact port DTO maturity is handled separately. Shutdown
+  suppresses pending callbacks instead of manufacturing terminals after their
+  owner has been irreversibly revoked.
+- **Consequences:** `_notify` moved behind an internal module, `setup()` returns
+  nothing, context accepts only `bufnr`, `path`, and `root`, public errors have
+  four named fields, and internal module reachability grants no support. The
+  sibling consumer's direct root-module use remains private until R2.4 supplies
+  its narrow replacement query.
+- **Revisit when:** A demonstrated consumer needs another facade action or
+  result field, a port promoted in R2.3 requires a public constructor change,
+  or the first stable release sets a stricter compatibility policy.
+
 ## Repository extraction status
 
 Moving the runtime into this repository does not change AN001–AN006. The module

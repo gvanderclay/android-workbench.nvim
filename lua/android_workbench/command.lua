@@ -32,7 +32,7 @@ function M.complete(arg_lead, command_line, cursor_position)
 end
 
 local function invalid(message)
-  require('android_workbench')._notify {
+  require('android_workbench.notify').emit {
     level = 'error',
     code = 'invalid_command',
     message = message .. '\n' .. USAGE,

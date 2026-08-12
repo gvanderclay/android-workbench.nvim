@@ -398,6 +398,36 @@ local ok, unexpected = xpcall(function()
   expect('default problem presenter stays lazy before the first action', package.loaded['android_workbench.integrations.quickfix'], nil)
 
   local android = require 'android_workbench'
+  do
+    local facade = vim.tbl_keys(android)
+    table.sort(facade)
+    expect('facade exposes only the supported pre-1.0 functions', facade, {
+      'build',
+      'cancel',
+      'gradle_task',
+      'logcat',
+      'open_actions',
+      'refresh',
+      'run',
+      'select_target',
+      'setup',
+      'show_status',
+      'show_task_output',
+      'shutdown',
+      'start_emulator',
+      'status',
+      'stop',
+      'stop_emulator',
+      'stop_logcat',
+    })
+  end
+  do
+    local invalid_before_action, invalid_before_action_error = pcall(android.status, { unknown = true })
+    expect('invalid context before the first action is rejected', invalid_before_action, false)
+    expect_true('early invalid context names the field', tostring(invalid_before_action_error):find('context.unknown', 1, true))
+    expect('invalid context does not construct the application', package.loaded['android_workbench.app'], nil)
+    android.shutdown()
+  end
   local valid, config_error = pcall(android.setup, { unknown = true })
   expect('unknown setup option is rejected', valid, false)
   expect_true('unknown setup error names the option', tostring(config_error):find('options.unknown', 1, true))
@@ -440,19 +470,25 @@ local ok, unexpected = xpcall(function()
     expect_true(case.path .. ' validation names option', tostring(config_error):find(case.path, 1, true))
   end
 
-  local default_config = android.setup {}
+  expect('setup exposes no private configuration result', android.setup {}, nil)
+  local default_config = require('android_workbench.config').get()
   expect('Run auto-start defaults on', default_config.run.start_stopped_avd, true)
   expect('default config exposes no top-level problem presentation policy', default_config.problems, nil)
   expect('emulator boot timeout default', default_config.emulator.boot_timeout_ms, 180000)
   expect('emulator poll interval default', default_config.emulator.poll_interval_ms, 1000)
   default_config.run.start_stopped_avd = false
-  expect('returned config cannot mutate stored Run policy', require('android_workbench.config').get().run.start_stopped_avd, true)
+  expect('retrieved config cannot mutate stored Run policy', require('android_workbench.config').get().run.start_stopped_avd, true)
 
-  local configured = android.setup {
-    ports = { emulator = ports.emulator, problems = ports.problems },
-    run = { start_stopped_avd = false },
-    emulator = { boot_timeout_ms = 90000, poll_interval_ms = 250 },
-  }
+  expect(
+    'configured setup exposes no private configuration result',
+    android.setup {
+      ports = { emulator = ports.emulator, problems = ports.problems },
+      run = { start_stopped_avd = false },
+      emulator = { boot_timeout_ms = 90000, poll_interval_ms = 250 },
+    },
+    nil
+  )
+  local configured = require('android_workbench.config').get()
   expect('custom emulator port is retained', configured.ports.emulator, ports.emulator)
   expect('custom problem presenter is retained as a port', configured.ports.problems, ports.problems)
   expect('Run auto-start can be disabled', configured.run.start_stopped_avd, false)
@@ -722,13 +758,24 @@ local ok, unexpected = xpcall(function()
   expect('emulator stop command uses facade', emulator_command_calls[2], { action = 'stop', context = command_context })
   expect('Gradle command dispatches', original_execute({ 'gradle' }, command_context), true)
   expect('Gradle command uses facade', emulator_command_calls[3], { action = 'gradle', context = command_context })
-  expect('Gradle command rejects raw arguments', original_execute({ 'gradle', '--info' }, command_context), false)
+  do
+    local invalid_notifications = #notifications
+    expect('Gradle command rejects raw arguments', original_execute({ 'gradle', '--info' }, command_context), false)
+    expect('invalid command still uses the configured notification port', notifications[invalid_notifications + 1].code, 'invalid_command')
+  end
   expect('output command dispatches', original_execute({ 'output' }, command_context), true)
   expect('output command uses facade', emulator_command_calls[4], { action = 'output', context = command_context })
   android.start_emulator = original_start_emulator
   android.stop_emulator = original_stop_emulator
   android.gradle_task = original_gradle_task
   android.show_task_output = original_show_task_output
+  do
+    command.execute = function() error 'command exploded' end
+    local failed_command_notifications = #notifications
+    vim.cmd.Android()
+    expect('command failures still use the configured notification port', notifications[failed_command_notifications + 1].code, 'command_failed')
+    command.execute = original_execute
+  end
   expect('emulator start facade is public', type(android.start_emulator), 'function')
   expect('emulator stop facade is public', type(android.stop_emulator), 'function')
   expect('Gradle-task facade is public', type(android.gradle_task), 'function')
@@ -1084,6 +1131,39 @@ local ok, unexpected = xpcall(function()
     expect_true('malformed app selection completes', vim.wait(1000, function() return malformed_selection ~= nil end, 10))
     expect('malformed app selection is rejected safely', malformed_selection.code, 'invalid_selection')
   end
+  do
+    pending_picker = nil
+    local malformed_picker_terminal
+    android.select_target('app', { root = root_one }, function(err, result) malformed_picker_terminal = { err = err, result = result } end)
+    expect_true('malformed picker error reaches the adapter boundary', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    pending_picker.callback { unexpected = 'private adapter data' }
+    expect_true('malformed picker error completes', vim.wait(1000, function() return malformed_picker_terminal ~= nil end, 10))
+    expect('malformed picker error gets a stable public code', malformed_picker_terminal.err.code, 'operation_failed')
+    expect('malformed picker error gets a stable public message', malformed_picker_terminal.err.message, 'Android Workbench operation failed.')
+    expect('failed public callback returns no result', malformed_picker_terminal.result, nil)
+  end
+
+  do
+    pending_picker = nil
+    local extended_picker_error
+    android.select_target('app', { root = root_one }, function(err) extended_picker_error = err end)
+    expect_true('extended picker error reaches the adapter boundary', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    pending_picker.callback {
+      code = 'picker_failed',
+      message = 'The picker failed.',
+      root = root_one,
+      details = { reason = 'closed' },
+      adapter_private = true,
+    }
+    expect_true('extended picker error completes', vim.wait(1000, function() return extended_picker_error ~= nil end, 10))
+    expect('public errors expose only supported fields', extended_picker_error, {
+      code = 'picker_failed',
+      message = 'The picker failed.',
+      root = root_one,
+      details = { reason = 'closed' },
+    })
+  end
+
   pending_picker = nil
   local mutated_selection
   android.select_target('app', { root = root_one }, function(err) mutated_selection = err end)
@@ -1863,6 +1943,23 @@ local ok, unexpected = xpcall(function()
   valid, config_error = pcall(android.setup, {})
   expect('setup is frozen after first action', valid, false)
   expect_true('late setup error is actionable', tostring(config_error):find('before the first Android action', 1, true))
+
+  for _, case in ipairs {
+    { label = 'unknown context field', context = { root = root_one, unknown = true }, field = 'context.unknown' },
+    { label = 'invalid context root', context = { root = false }, field = 'context.root' },
+    { label = 'invalid context path', context = { path = 42 }, field = 'context.path' },
+    { label = 'invalid context buffer', context = { bufnr = -1 }, field = 'context.bufnr' },
+  } do
+    valid, config_error = pcall(android.status, case.context)
+    expect(case.label .. ' is rejected', valid, false)
+    expect_true(case.label .. ' names the field', tostring(config_error):find(case.field, 1, true))
+  end
+  valid, config_error = pcall(android.build, { root = root_one }, false)
+  expect('invalid callback is rejected', valid, false)
+  expect_true('invalid callback error is actionable', tostring(config_error):find('callback must be a function', 1, true))
+  valid, config_error = pcall(android.select_target, 'unknown', { root = root_one })
+  expect('unknown target kind is rejected', valid, false)
+  expect_true('unknown target kind error is actionable', tostring(config_error):find('unsupported Android target kind', 1, true))
 
   runner_cancel_mode = 'reject'
   hold_runner = true

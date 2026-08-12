@@ -1,11 +1,136 @@
 local M = {}
 
 local config = require 'android_workbench.config'
+local Notify = require 'android_workbench.notify'
 
 local instance
 
+---@class AndroidWorkbenchContext
+---@field bufnr? integer
+---@field path? string
+---@field root? string
+
+---@class AndroidWorkbenchError
+---@field code string
+---@field message string
+---@field root? string
+---@field details? any
+
+---@class AndroidWorkbenchOperationHandle
+---@field cancel fun(self: AndroidWorkbenchOperationHandle): boolean
+
+---@class AndroidWorkbenchLogcatHandle
+---@field show fun(self: AndroidWorkbenchLogcatHandle, opts?: table): boolean
+---@field stop fun(self: AndroidWorkbenchLogcatHandle): boolean
+
+---@class AndroidWorkbenchAppIdentity
+---@field build_path string
+---@field project_path string
+
+---@class AndroidWorkbenchDeviceIdentity
+---@field serial? string
+---@field avd_name? string
+---@field state? string
+
+---@class AndroidWorkbenchSelection
+---@field app? AndroidWorkbenchAppIdentity
+---@field variant? string
+---@field device? AndroidWorkbenchDeviceIdentity
+
+---@class AndroidWorkbenchStatus
+---@field root string
+---@field wrapper string
+---@field phase 'idle'|'discovering'|'ready'|'error'
+---@field authorized boolean
+---@field targets integer
+---@field selection AndroidWorkbenchSelection
+---@field operation? string
+---@field logcat 'stopped'|'starting'|'running'
+---@field task_output boolean
+---@field error? AndroidWorkbenchError
+
+---@class AndroidWorkbenchTarget
+---@field id string
+---@field build_path string
+---@field build_root string
+---@field project_path string
+---@field project_dir string
+---@field variant string
+---@field application_id string
+---@field assemble_task string
+---@field install_task? string
+
+---@class AndroidWorkbenchGradleTask
+---@field id string
+---@field build_path string
+---@field project_path string
+---@field name string
+
+---@class AndroidWorkbenchTaskTerminal
+---@field status 'success'
+---@field name string
+---@field metadata table
+---@field code? integer
+---@field signal? integer
+---@field stdout? string
+---@field stderr? string
+---@field stdout_truncated? boolean
+---@field stderr_truncated? boolean
+---@field output_truncated? boolean
+---@field problems table[]
+---@field problems_truncated boolean
+
+---@class AndroidWorkbenchLauncherComponent
+---@field component string
+---@field package string
+---@field activity? string
+
+---@class AndroidWorkbenchBuildResult
+---@field kind 'build'
+---@field target AndroidWorkbenchTarget
+---@field task AndroidWorkbenchTaskTerminal
+
+---@class AndroidWorkbenchRunResult
+---@field kind 'run'
+---@field target AndroidWorkbenchTarget
+---@field device AndroidWorkbenchDeviceIdentity
+---@field component AndroidWorkbenchLauncherComponent
+---@field task AndroidWorkbenchTaskTerminal
+
+---@class AndroidWorkbenchGradleTaskResult
+---@field kind 'gradle_task'
+---@field gradle_task AndroidWorkbenchGradleTask
+---@field task AndroidWorkbenchTaskTerminal
+
+---@class AndroidWorkbenchStopResult
+---@field kind 'stop'
+---@field target AndroidWorkbenchTarget
+---@field device AndroidWorkbenchDeviceIdentity
+
+---@class AndroidWorkbenchEmulatorResult
+---@field kind 'emulator_start'|'emulator_stop'
+---@field device AndroidWorkbenchDeviceIdentity
+
+---@class AndroidWorkbenchLogcatResult
+---@field kind 'logcat'
+---@field target AndroidWorkbenchTarget
+---@field device AndroidWorkbenchDeviceIdentity
+---@field handle AndroidWorkbenchLogcatHandle
+
+---@class AndroidWorkbenchSetupOpts
+---@field ports? table<string, table>
+---@field logcat? { open_on_run?: boolean }
+---@field run? { start_stopped_avd?: boolean }
+---@field emulator? { boot_timeout_ms?: integer, poll_interval_ms?: integer }
+
 local function error_message(err)
-  if type(err) == 'table' then return err.message or err.code or vim.inspect(err) end
+  if type(err) == 'table' then
+    local message = rawget(err, 'message')
+    if type(message) == 'string' then return message end
+    local code = rawget(err, 'code')
+    if type(code) == 'string' then return code end
+    return vim.inspect(err)
+  end
   return tostring(err)
 end
 
@@ -19,6 +144,14 @@ end
 local function context(opts)
   if opts ~= nil and type(opts) ~= 'table' then error('android_workbench context must be a table', 3) end
   opts = opts or {}
+  for key in pairs(opts) do
+    if key ~= 'bufnr' and key ~= 'path' and key ~= 'root' then error(('android_workbench context.%s is not supported'):format(tostring(key)), 3) end
+  end
+  if opts.bufnr ~= nil and (type(opts.bufnr) ~= 'number' or opts.bufnr < 0 or opts.bufnr % 1 ~= 0) then
+    error('android_workbench context.bufnr must be a non-negative integer', 3)
+  end
+  if opts.path ~= nil and (type(opts.path) ~= 'string' or opts.path == '') then error('android_workbench context.path must be a non-empty string', 3) end
+  if opts.root ~= nil and (type(opts.root) ~= 'string' or opts.root == '') then error('android_workbench context.root must be a non-empty string', 3) end
 
   local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
   local path = opts.path
@@ -39,71 +172,78 @@ local function app()
   return instance
 end
 
+local function public_error(err)
+  if err == nil then return nil end
+  if type(err) ~= 'table' then return {
+    code = 'operation_failed',
+    message = 'Android Workbench operation failed.',
+    details = tostring(err),
+  } end
+
+  local code = rawget(err, 'code')
+  local message = rawget(err, 'message')
+  if type(code) ~= 'string' or code == '' or type(message) ~= 'string' or message == '' then
+    return {
+      code = 'operation_failed',
+      message = 'Android Workbench operation failed.',
+    }
+  end
+
+  local result = {
+    code = code,
+    message = message,
+  }
+  local root = rawget(err, 'root')
+  if type(root) == 'string' and root ~= '' then result.root = root end
+  local details = rawget(err, 'details')
+  if details ~= nil then result.details = vim.deepcopy(details) end
+  return result
+end
+
 local function copy_public_dto(value)
   if type(value) ~= 'table' then return value end
   local copy = {}
   for key, member in pairs(value) do
-    copy[key] = key == 'handle' and member or vim.deepcopy(member)
+    if key == 'handle' then
+      copy[key] = member
+    elseif key == 'error' then
+      copy[key] = public_error(member)
+    else
+      copy[key] = vim.deepcopy(member)
+    end
   end
   return copy
 end
 
----@param event { level?: 'info'|'warn'|'error', title?: string, message: string, code?: string }
-function M._notify(event)
-  event = {
-    level = event.level or 'info',
-    title = event.title or 'Android Workbench',
-    message = event.message,
-    code = event.code,
-  }
-
-  local notifications = config.get().ports.notifications
-  if notifications ~= nil then
-    local ok, err = pcall(notifications.emit, event)
-    if ok then return end
-    event = {
-      level = 'error',
-      title = 'Android Workbench',
-      message = ('Notification adapter failed: %s'):format(error_message(err)),
-    }
-  end
-
-  local levels = {
-    info = vim.log.levels.INFO,
-    warn = vim.log.levels.WARN,
-    error = vim.log.levels.ERROR,
-  }
-  vim.notify(event.message, levels[event.level] or vim.log.levels.INFO, { title = event.title })
-end
-
----@param opts? table
----@return AndroidWorkbenchConfig
+---@param opts? AndroidWorkbenchSetupOpts
 function M.setup(opts)
   if instance ~= nil then error('android_workbench.setup must run before the first Android action', 2) end
-  return config.setup(opts)
+  config.setup(opts)
 end
 
----@param opts? table
----@return table handle
+---@param opts? AndroidWorkbenchContext
+---@return AndroidWorkbenchOperationHandle handle
 function M.open_actions(opts)
-  return app():open_actions(context(opts), function(argv, action_context) require('android_workbench.command').execute(argv, action_context) end)
+  local action_context = context(opts)
+  return app():open_actions(action_context, function(argv, selected_context) require('android_workbench.command').execute(argv, selected_context) end)
 end
 
----@param opts? table
----@return table? status
----@return table|string? error
+---@param opts? AndroidWorkbenchContext
+---@return AndroidWorkbenchStatus? status
+---@return AndroidWorkbenchError? error
 function M.status(opts)
-  local status, err = app():status(context(opts))
-  return copy_public_dto(status), copy_public_dto(err)
+  local action_context = context(opts)
+  local status, err = app():status(action_context)
+  return copy_public_dto(status), public_error(err)
 end
 
----@param opts? table
----@return table? status
----@return table|string? error
+---@param opts? AndroidWorkbenchContext
+---@return AndroidWorkbenchStatus? status
+---@return AndroidWorkbenchError? error
 function M.show_status(opts)
   local status, err = M.status(opts)
   if status == nil then
-    M._notify {
+    Notify.emit {
       level = 'error',
       code = 'status_failed',
       message = error_message(err),
@@ -134,7 +274,7 @@ function M.show_status(opts)
   }
   if status.error ~= nil then lines[#lines + 1] = 'Error: ' .. error_message(status.error) end
 
-  M._notify {
+  Notify.emit {
     level = status.error and 'error' or 'info',
     code = 'status',
     message = table.concat(lines, '\n'),
@@ -147,49 +287,70 @@ local function callback_or_noop(callback)
     return function() end
   end
   if type(callback) ~= 'function' then error('android_workbench callback must be a function', 3) end
-  return function(err, result) callback(copy_public_dto(err), copy_public_dto(result)) end
+  return function(err, result)
+    err = public_error(err)
+    callback(err, err == nil and copy_public_dto(result) or nil)
+  end
 end
 
----@param opts? table
----@param callback? fun(error: table|string|nil, status: table|nil)
----@return table? handle
-function M.refresh(opts, callback) return app():refresh(context(opts), callback_or_noop(callback)) end
+---@param opts? AndroidWorkbenchContext
+---@param callback? fun(error: AndroidWorkbenchError?, status: AndroidWorkbenchStatus?)
+---@return AndroidWorkbenchOperationHandle handle
+function M.refresh(opts, callback)
+  local action_context = context(opts)
+  local done = callback_or_noop(callback)
+  return app():refresh(action_context, done)
+end
 
 ---@param kind 'app'|'variant'|'device'
----@param opts? table
----@param callback? fun(error: table|string|nil, status: table|nil)
----@return table? handle
+---@param opts? AndroidWorkbenchContext
+---@param callback? fun(error: AndroidWorkbenchError?, status: AndroidWorkbenchStatus?)
+---@return AndroidWorkbenchOperationHandle handle
 function M.select_target(kind, opts, callback)
-  local target_app = app()
+  if kind ~= 'app' and kind ~= 'variant' and kind ~= 'device' then error(('unsupported Android target kind: %s'):format(tostring(kind)), 2) end
+  local action_context = context(opts)
   local done = callback_or_noop(callback)
-  if kind == 'app' then return target_app:select_app(context(opts), done) end
-  if kind == 'variant' then return target_app:select_variant(context(opts), done) end
-  if kind == 'device' then return target_app:select_device(context(opts), done) end
-  error(('unsupported Android target kind: %s'):format(tostring(kind)), 2)
+  local target_app = app()
+  if kind == 'app' then return target_app:select_app(action_context, done) end
+  if kind == 'variant' then return target_app:select_variant(action_context, done) end
+  return target_app:select_device(action_context, done)
 end
 
----@param opts? table
----@param callback? fun(error: table|string|nil, result: table|nil)
----@return table? handle
-function M.build(opts, callback) return app():build(context(opts), callback_or_noop(callback)) end
+---@param opts? AndroidWorkbenchContext
+---@param callback? fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchBuildResult?)
+---@return AndroidWorkbenchOperationHandle handle
+function M.build(opts, callback)
+  local action_context = context(opts)
+  local done = callback_or_noop(callback)
+  return app():build(action_context, done)
+end
 
----@param opts? table
----@param callback? fun(error: table|string|nil, result: table|nil)
----@return table? handle
-function M.run(opts, callback) return app():run(context(opts), callback_or_noop(callback)) end
+---@param opts? AndroidWorkbenchContext
+---@param callback? fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchRunResult?)
+---@return AndroidWorkbenchOperationHandle handle
+function M.run(opts, callback)
+  local action_context = context(opts)
+  local done = callback_or_noop(callback)
+  return app():run(action_context, done)
+end
 
----@param opts? table
----@param callback? fun(error: table|string|nil, result: table|nil)
----@return table? handle
-function M.gradle_task(opts, callback) return app():gradle_task(context(opts), callback_or_noop(callback)) end
+---@param opts? AndroidWorkbenchContext
+---@param callback? fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchGradleTaskResult?)
+---@return AndroidWorkbenchOperationHandle handle
+function M.gradle_task(opts, callback)
+  local action_context = context(opts)
+  local done = callback_or_noop(callback)
+  return app():gradle_task(action_context, done)
+end
 
----@param opts? table
+---@param opts? AndroidWorkbenchContext
 ---@return boolean? shown
----@return table|string? error
+---@return AndroidWorkbenchError? error
 function M.show_task_output(opts)
-  local shown, err = app():show_task_output(context(opts))
-  err = copy_public_dto(err)
-  if not shown then M._notify {
+  local action_context = context(opts)
+  local shown, err = app():show_task_output(action_context)
+  err = public_error(err)
+  if not shown then Notify.emit {
     level = 'error',
     code = 'task_output_failed',
     message = error_message(err),
@@ -197,33 +358,50 @@ function M.show_task_output(opts)
   return shown, err
 end
 
----@param opts? table
----@param callback? fun(error: table|string|nil, result: table|nil)
----@return table? handle
-function M.start_emulator(opts, callback) return app():start_emulator(context(opts), callback_or_noop(callback)) end
+---@param opts? AndroidWorkbenchContext
+---@param callback? fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchEmulatorResult?)
+---@return AndroidWorkbenchOperationHandle handle
+function M.start_emulator(opts, callback)
+  local action_context = context(opts)
+  local done = callback_or_noop(callback)
+  return app():start_emulator(action_context, done)
+end
 
----@param opts? table
----@param callback? fun(error: table|string|nil, result: table|nil)
----@return table? handle
-function M.stop_emulator(opts, callback) return app():stop_emulator(context(opts), callback_or_noop(callback)) end
+---@param opts? AndroidWorkbenchContext
+---@param callback? fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchEmulatorResult?)
+---@return AndroidWorkbenchOperationHandle handle
+function M.stop_emulator(opts, callback)
+  local action_context = context(opts)
+  local done = callback_or_noop(callback)
+  return app():stop_emulator(action_context, done)
+end
 
----@param opts? table
----@param callback? fun(error: table|string|nil, result: table|nil)
----@return table? handle
-function M.stop(opts, callback) return app():stop(context(opts), callback_or_noop(callback)) end
+---@param opts? AndroidWorkbenchContext
+---@param callback? fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchStopResult?)
+---@return AndroidWorkbenchOperationHandle handle
+function M.stop(opts, callback)
+  local action_context = context(opts)
+  local done = callback_or_noop(callback)
+  return app():stop(action_context, done)
+end
 
----@param opts? table
----@param callback? fun(error: table|string|nil, result: table|nil)
----@return table? handle
-function M.logcat(opts, callback) return app():open_logcat(context(opts), callback_or_noop(callback)) end
+---@param opts? AndroidWorkbenchContext
+---@param callback? fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchLogcatResult?)
+---@return AndroidWorkbenchOperationHandle handle
+function M.logcat(opts, callback)
+  local action_context = context(opts)
+  local done = callback_or_noop(callback)
+  return app():open_logcat(action_context, done)
+end
 
----@param opts? table
+---@param opts? AndroidWorkbenchContext
 ---@return boolean? stopped
----@return table|string? error
+---@return AndroidWorkbenchError? error
 function M.stop_logcat(opts)
-  local stopped, err = app():stop_logcat(context(opts))
-  err = copy_public_dto(err)
-  if not stopped then M._notify {
+  local action_context = context(opts)
+  local stopped, err = app():stop_logcat(action_context)
+  err = public_error(err)
+  if not stopped then Notify.emit {
     level = 'error',
     code = 'logcat_stop_failed',
     message = error_message(err),
@@ -231,13 +409,14 @@ function M.stop_logcat(opts)
   return stopped, err
 end
 
----@param opts? table
+---@param opts? AndroidWorkbenchContext
 ---@return boolean? cancelled
----@return table|string? error
+---@return AndroidWorkbenchError? error
 function M.cancel(opts)
-  local cancelled, err = app():cancel(context(opts))
-  err = copy_public_dto(err)
-  if not cancelled then M._notify {
+  local action_context = context(opts)
+  local cancelled, err = app():cancel(action_context)
+  err = public_error(err)
+  if not cancelled then Notify.emit {
     level = 'error',
     code = 'cancel_failed',
     message = error_message(err),

@@ -44,7 +44,9 @@ behind the current shape live in [the decision record](docs/decisions.md).
 - A configuration-only `setup()` and a lazy `:Android` command surface.
 
 This list describes implemented breadth, not a public stability promise. The
-pre-release API and support boundary still need to be deliberately frozen.
+intentional pre-1.0 facade and module boundary is documented in
+`:help android-workbench-api`; exact port maturity and release compatibility
+remain roadmap work.
 
 ## Requirements and current support evidence
 
@@ -111,7 +113,7 @@ Run `:Android` for the contextual action menu. The command also accepts:
 - `status` and `refresh`
 - `target app`, `target variant`, and `target device`
 - `emulator start` and `emulator stop`
-- `build`, `run`, `stop`, and `gradle`
+- `build`, `run`, `stop`, `gradle`, and `output`
 - `logcat`, `logcat stop`, and `cancel`
 
 Use `:help android-workbench` for the complete command and configuration
