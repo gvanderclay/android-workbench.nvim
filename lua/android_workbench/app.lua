@@ -345,6 +345,32 @@ function App:_session(context)
   return session
 end
 
+function App:_logcat_registry(root, create)
+  local registry = self.logcats[root]
+  if not registry and create then
+    registry = { entries = {}, starting = {}, current = nil, sequence = 0 }
+    self.logcats[root] = registry
+  end
+  return registry
+end
+
+function App:_logcat_start_registry(root, create)
+  local registry = self.logcat_starts[root]
+  if not registry and create then
+    registry = { operations = {}, current = nil, sequence = 0 }
+    self.logcat_starts[root] = registry
+  end
+  return registry
+end
+
+function App:_logcat_status(root)
+  local registry = self:_logcat_registry(root, false)
+  if registry and next(registry.entries) then return 'running' end
+  local starts = self:_logcat_start_registry(root, false)
+  if starts and next(starts.operations) then return 'starting' end
+  return 'stopped'
+end
+
 ---@param context? { bufnr?: integer, path?: string, root?: string }
 ---@return table? status
 ---@return table? error
@@ -353,7 +379,7 @@ function App:status(context)
   if not session then return nil, err end
   local status = session:status()
   status.operation = self.active[session.root] and self.active[session.root].kind or nil
-  status.logcat = self.logcats[session.root] and 'running' or (self.logcat_starts[session.root] and 'starting' or 'stopped')
+  status.logcat = self:_logcat_status(session.root)
   status.task_output = self:_has_task_output(session.root)
   return status
 end
@@ -395,7 +421,7 @@ function App:open_actions(context, dispatch)
 
   local status = session:status()
   status.operation = self.active[session.root] and self.active[session.root].kind or nil
-  status.logcat = self.logcats[session.root] and 'running' or (self.logcat_starts[session.root] and 'starting' or 'stopped')
+  status.logcat = self:_logcat_status(session.root)
   status.task_output = self:_has_task_output(session.root)
 
   local items = Actions.available(status)
@@ -841,38 +867,68 @@ function App:select_device(context, callback)
   return operation
 end
 
-local function logcat_identity(target, device) return table.concat({ target.id, target.application_id, device.serial, device.avd_name or '' }, '\0') end
+local function logcat_identity(target, device) return table.concat({ target.application_id, device.serial }, '\0') end
+
+function App:_select_logcat(registry, identity)
+  local entry = registry.entries[identity]
+  if not entry then return nil end
+  registry.sequence = registry.sequence + 1
+  entry.selected = registry.sequence
+  registry.current = identity
+  return entry
+end
+
+function App:_cleanup_logcat_registry(root, registry)
+  if self.logcats[root] == registry and not next(registry.entries) and not next(registry.starting) then self.logcats[root] = nil end
+end
+
+function App:_remove_logcat(root, identity, token)
+  local registry = self:_logcat_registry(root, false)
+  local entry = registry and registry.entries[identity] or nil
+  if not entry or (token and entry.token ~= token) then return nil end
+  registry.entries[identity] = nil
+  if registry.current == identity then
+    registry.current = nil
+    local selected = -1
+    for sibling_identity, sibling in pairs(registry.entries) do
+      if sibling.selected > selected then
+        selected = sibling.selected
+        registry.current = sibling_identity
+      end
+    end
+  end
+  self:_cleanup_logcat_registry(root, registry)
+  return entry
+end
 
 function App:_open_logcat(session, target, device, focus, callback)
   local identity = logcat_identity(target, device)
-  local existing = self.logcats[session.root]
-  if existing and existing.identity == identity then
+  local registry = self:_logcat_registry(session.root, true)
+  local existing = registry.entries[identity]
+  if existing then
     local shown, show_result = pcall(existing.handle.show, existing.handle, { focus = focus })
     if not shown or show_result == false then
       callback(workbench_error('logcat_show_failed', 'Could not show Android Logcat.', session.root, shown and nil or tostring(show_result)))
     else
+      self:_select_logcat(registry, identity)
       callback(nil, existing)
     end
     return
   end
 
-  if existing then
-    local stopped, stop_result = pcall(existing.handle.stop, existing.handle)
-    if not stopped or stop_result == false then
-      callback(
-        workbench_error(
-          'logcat_stop_failed',
-          ('Could not replace Android Logcat for %s because the current stream did not stop.'):format(session.root),
-          session.root,
-          stopped and nil or tostring(stop_result)
-        )
-      )
-      return
-    end
-    self.logcats[session.root] = nil
+  if registry.starting[identity] then
+    callback(
+      workbench_error('logcat_starting', ('Android Logcat is already starting for %s on %s.'):format(target.application_id, device.serial), session.root)
+    )
+    return
   end
 
   local token = {}
+  registry.starting[identity] = token
+  local function clear_starting()
+    if registry.starting[identity] == token then registry.starting[identity] = nil end
+    self:_cleanup_logcat_registry(session.root, registry)
+  end
   local request = {
     key = session.root,
     title = ('Logcat %s'):format(target.application_id),
@@ -885,9 +941,9 @@ function App:_open_logcat(session, target, device, focus, callback)
     focus = focus,
     on_exit = function(result)
       vim.schedule(function()
-        local current = self.logcats[session.root]
-        if not current or current.token ~= token then return end
-        self.logcats[session.root] = nil
+        if self.closed then return end
+        local removed = self:_remove_logcat(session.root, identity, token)
+        if not removed then return end
         if type(result) == 'table' and result.status == 'failure' then
           local err = result.error
           self:_emit('error', type(err) == 'table' and (err.message or err.code) or tostring(err or 'Android Logcat stopped unexpectedly.'))
@@ -908,22 +964,60 @@ function App:_open_logcat(session, target, device, focus, callback)
 
   local started, handle = pcall(self.logcat.start, request)
   if not started then
+    clear_starting()
     callback(workbench_error('logcat_start_failed', 'Could not start Android Logcat.', session.root, tostring(handle)))
     return
   end
   if type(handle) ~= 'table' or type(handle.show) ~= 'function' or type(handle.stop) ~= 'function' then
     if type(handle) == 'table' and type(handle.stop) == 'function' then pcall(handle.stop, handle) end
+    clear_starting()
     callback(workbench_error('logcat_start_failed', 'Android Logcat presenter returned an invalid handle.', session.root))
+    return
+  end
+
+  if self.closed or self.logcats[session.root] ~= registry or registry.starting[identity] ~= token then
+    pcall(handle.stop, handle)
+    if type(handle._abandon) == 'function' then pcall(handle._abandon, handle) end
+    if not self.closed then callback(workbench_error('app_closed', 'Android Workbench is shut down.')) end
     return
   end
 
   local entry = {
     token = token,
     identity = identity,
+    application_id = target.application_id,
+    device_serial = device.serial,
     handle = handle,
   }
-  self.logcats[session.root] = entry
+  registry.starting[identity] = nil
+  registry.entries[identity] = entry
+  self:_select_logcat(registry, identity)
   callback(nil, entry)
+end
+
+function App:_register_logcat_start(root, operation)
+  local registry = self:_logcat_start_registry(root, true)
+  registry.sequence = registry.sequence + 1
+  operation.logcat_sequence = registry.sequence
+  registry.operations[operation] = true
+  registry.current = operation
+end
+
+function App:_unregister_logcat_start(root, operation)
+  local registry = self:_logcat_start_registry(root, false)
+  if not registry or not registry.operations[operation] then return end
+  registry.operations[operation] = nil
+  if registry.current == operation then
+    registry.current = nil
+    local selected = -1
+    for candidate in pairs(registry.operations) do
+      if candidate.logcat_sequence > selected then
+        selected = candidate.logcat_sequence
+        registry.current = candidate
+      end
+    end
+  end
+  if not next(registry.operations) then self.logcat_starts[root] = nil end
 end
 
 ---@param context? table
@@ -938,20 +1032,12 @@ function App:open_logcat(context, callback)
     return operation
   end
 
-  if self.logcat_starts[session.root] then
-    local operation = self:_complete(callback)
-    vim.schedule(
-      function() operation:finish(workbench_error('logcat_starting', ('Android Logcat is already starting for %s.'):format(session.root), session.root)) end
-    )
-    return operation
-  end
-
   local operation
   operation = self:_complete(function(err, result)
-    if self.logcat_starts[session.root] == operation then self.logcat_starts[session.root] = nil end
+    self:_unregister_logcat_start(session.root, operation)
     callback(err, result)
   end)
-  self.logcat_starts[session.root] = operation
+  self:_register_logcat_start(session.root, operation)
 
   self:_preflight(session, operation, true, function(preflight_err, current_target, device)
     if operation.cancelled then return end
@@ -983,7 +1069,8 @@ function App:stop_logcat(context)
   local session, err = self:_session(context)
   if not session then return nil, err end
 
-  local starting = self.logcat_starts[session.root]
+  local starts = self:_logcat_start_registry(session.root, false)
+  local starting = starts and starts.current or nil
   if starting then
     if not starting.cancel() then
       return nil, workbench_error('cancel_failed', ('Android Logcat startup for %s could not be cancelled.'):format(session.root), session.root)
@@ -992,12 +1079,11 @@ function App:stop_logcat(context)
     return true
   end
 
-  local entry = self.logcats[session.root]
+  local registry = self:_logcat_registry(session.root, false)
+  local entry = registry and registry.current and registry.entries[registry.current] or nil
   if not entry then return nil, workbench_error('logcat_not_running', ('Android Logcat is not running for %s.'):format(session.root), session.root) end
-  self.logcats[session.root] = nil
   local stopped, result = pcall(entry.handle.stop, entry.handle)
   if not stopped or result == false then
-    self.logcats[session.root] = entry
     return nil,
       workbench_error(
         'logcat_stop_failed',
@@ -1006,6 +1092,7 @@ function App:stop_logcat(context)
         stopped and nil or tostring(result)
       )
   end
+  self:_remove_logcat(session.root, entry.identity, entry.token)
   self:_emit('info', 'Stopped Android Logcat.')
   return true
 end
@@ -1046,7 +1133,7 @@ function App:_start_workflow(kind, context, callback)
           self:_emit('info', ('Built %s.'):format(Target.target_label(current_target)))
         elseif kind == 'run' then
           self:_emit('info', ('Launched %s on %s.'):format(current_target.application_id, result.device.serial))
-          if self.logcat_options.open_on_run and not self.logcat_starts[session.root] then
+          if self.logcat_options.open_on_run then
             self:_open_logcat(session, current_target, result.device, false, function(logcat_err)
               if logcat_err then self:_emit('warn', logcat_err.message or tostring(logcat_err)) end
             end)
@@ -1285,9 +1372,11 @@ function App:shutdown()
   end
   local logcats = self.logcats
   self.logcats = {}
-  for _, entry in pairs(logcats) do
-    pcall(entry.handle.stop, entry.handle)
-    if type(entry.handle._abandon) == 'function' then pcall(entry.handle._abandon, entry.handle) end
+  for _, registry in pairs(logcats) do
+    for _, entry in pairs(registry.entries) do
+      pcall(entry.handle.stop, entry.handle)
+      if type(entry.handle._abandon) == 'function' then pcall(entry.handle._abandon, entry.handle) end
+    end
   end
   for _, session in pairs(self.sessions) do
     pcall(session.close, session)

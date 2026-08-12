@@ -391,6 +391,36 @@ vimdoc and tests.
   action, tabpage-local docks become necessary, or an external consumer needs a
   reusable presentation coordinator.
 
+## AN013 — Keep independent root-local Logcat sessions
+
+- **Status:** Accepted
+- **Decision:** Store live Logcat entries per canonical root, keyed by exact
+  application ID and device serial. Opening an existing identity reveals it;
+  opening another identity starts a sibling and makes it current. Keep pending
+  starts independent and preserve aggregate `running`, `starting`, or `stopped`
+  status.
+- **Requirements:** Give every live entry an exact generation token. A stop or
+  presenter exit may remove only that token. Stop the current live entry when
+  no start is pending; otherwise cancel the most recent pending start. A
+  refused stop or cancellation retains ownership. Shutdown revokes all pending
+  starts, then stops and abandons every live entry before a replacement `App`
+  can act.
+- **Considered:** One replaceable Logcat slot per root, target/variant-based
+  identity, one shared device reader, and requiring replacement presenters to
+  share the native dock.
+- **Rationale:** Application/device identity matches the accepted Android
+  Studio-like workflow while preserving Workbench's UID-scoped capture. App
+  owns lifecycle and identity; presenters remain free to own their UI.
+- **Tradeoffs:** Each live session owns an ADB reader and independently bounded
+  history. The aggregate status cannot identify the current session; selection
+  and detailed session state remain separate R4.4 contracts.
+- **Consequences:** Different applications on one device and one application on
+  different devices can collect concurrently. Run auto-open no longer replaces
+  another identity, and late terminals cannot remove a sibling or successor.
+- **Revisit when:** A shared collector is justified by measurement, mutable
+  capture identity is accepted, or a supported presenter contract needs richer
+  session metadata.
+
 ## Repository extraction status
 
 Moving the runtime into this repository does not change AN001–AN006. The module

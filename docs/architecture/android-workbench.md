@@ -128,7 +128,10 @@ active-operation, and Logcat registries. Cross-component wiring belongs here.
 
 At most one Build, Run, application Stop, Gradle-task, emulator-start, or
 emulator-stop workflow is active per root. Logcat has a separate root-keyed
-lifecycle and may survive task completion.
+registry and may survive task completion. Each root retains independent live
+entries keyed by application ID and device serial, independently cancellable
+pending starts, and one current identity. Aggregate status is running when any
+entry is live, otherwise starting when any start is pending, otherwise stopped.
 
 Public shutdown closes and discards the current instance. A later action may
 construct a fresh `App`. Shutdown revokes the old generation even when an
@@ -294,15 +297,17 @@ than scrolling UI chrome; the native presenter does not alter global mappings
 or unrelated windows.
 
 The stream survives application process restarts by resolving the selected
-application UID. Replacing a root's stream requires the old presenter to accept
-stop; a late old exit must not clear a replacement. Logical-line and retained
-record bytes are bounded in addition to record count. An oversized logical line
-is discarded through its next newline before parsing resumes. Hiding the last
-native window releases parsed records, buffer lines, and the source index while
-capture continues into private storage. Showing restores the newest records in
-order before reapplying filters. Stop, wipeout, terminal exit, and the native
-handle's private shutdown-abandon transition close that storage; the private
-transition is not part of the experimental replacement-port contract.
+application UID. Opening an exact application/device identity reveals its
+existing handle; another identity starts a sibling without replacing or
+stopping it. Exact entry tokens keep a late old exit from clearing a successor
+or sibling. Logical-line and retained record bytes are bounded in addition to
+record count. An oversized logical line is discarded through its next newline
+before parsing resumes. Hiding the last native window releases parsed records,
+buffer lines, and the source index while capture continues into private
+storage. Showing restores the newest records in order before reapplying
+filters. Stop, wipeout, terminal exit, and the native handle's private
+shutdown-abandon transition close that storage; the private transition is not
+part of the experimental replacement-port contract.
 The native dock is likewise private presentation policy; custom Logcat
 presenters retain complete ownership of their windows.
 
@@ -391,8 +396,9 @@ closed receiving boundaries justify promotion.
    when its generation is still current.
 5. The leaf process adapter alone owns signal escalation and its timer. Parents
    cascade cancellation but do not race a second termination policy.
-6. Root operation slots remain occupied until the owned terminal. Logcat uses a
-   separate root-keyed slot and may remain open across task completion.
+6. Root operation slots remain occupied until the owned terminal. Logcat uses
+   separate root-keyed live and pending registries and may remain open across
+   task completion.
 7. A model-dependent action discovers a complete snapshot, resolves current
    target/device identity, and verifies the final snapshot and selection before
    use. A removed target, stale task, changed selection, or changed emulator

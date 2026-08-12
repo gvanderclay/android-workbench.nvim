@@ -21,6 +21,8 @@ while the first pre-1.0 release gates remain open.
 - Explicit `0.x` maturity labels for every replacement port.
 - Private bounded temporary storage for hidden native Logcat history, with
   ordered restoration while capture remains active.
+- Independent root-local Logcat sessions keyed by application ID and device
+  serial, including exact reuse and sibling-safe lifecycle handling.
 
 ### Changed
 

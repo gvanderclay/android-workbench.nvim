@@ -1,7 +1,7 @@
 # Multi-session Logcat research and plan
 
-Status: R4.1 and R4.2 are implemented and verified. R4.3 through R4.6 remain
-planned post-`v0.1.0` work.
+Status: R4.1 through R4.3 are implemented and verified. R4.4 through R4.6
+remain planned post-`v0.1.0` work.
 
 ## Desired outcome
 
@@ -96,16 +96,16 @@ crosses the configured size, so the implementation can retain approximately
 twice the configured threshold. This changes storage while a panel is hidden;
 it does not establish a shared device reader.
 
-## Android Workbench today
+## Android Workbench at the research baseline
 
-`App` currently stores one Logcat entry and one pending Logcat start per
-canonical root. Its identity contains the selected target, application ID,
+At that baseline, `App` stored one Logcat entry and one pending Logcat start per
+canonical root. Its identity contained the selected target, application ID,
 device serial, and optional AVD name.
 
-Opening the same identity calls the existing handle's `show()` method. Opening
-a different identity first requires the current handle to accept `stop()`. A
-refused or failed stop blocks the replacement and preserves the old stream.
-Focused API tests characterize that behavior.
+Opening the same identity called the existing handle's `show()` method. Opening
+a different identity first required the current handle to accept `stop()`. A
+refused or failed stop blocked the replacement and preserved the old stream.
+Focused API tests characterized that behavior.
 
 The native presenter resolves the selected package UID and starts:
 
@@ -130,8 +130,13 @@ The native buffer already has the independent behavior a session needs:
 
 R4.1 moves hidden native histories into private bounded temporary storage and
 restores them when shown. R4.2 lets handles created by one native presenter
-switch their independent buffers through its owned bottom split. The remaining
-layers are a multi-entry App registry and a way to choose among those entries.
+switch their independent buffers through its owned bottom split. R4.3 replaces
+the single App slot with a root-local registry keyed by application ID and
+device serial. Different identities now stay live together; opening an exact
+identity reveals it and makes it current. Pending starts are tracked
+independently, status remains aggregate, and exact generation tokens prevent a
+late exit from removing a successor or sibling. The remaining layers are the
+public picker and commands for choosing and stopping those entries.
 
 One hermetic clean-Neovim measurement fed 10,000 synthetic records of about 440
 bytes into each native session. Four saturated sessions added 47.34 MiB of RSS;
@@ -290,7 +295,12 @@ instead of merely re-filtering device-wide history.
   replacement-App shutdown; then `make test` and `git diff --check`.
 - Manual proof: none.
 - Decision gate: none.
-- Status: pending.
+- Status: complete. Focused contracts prove same-device/different-app and
+  same-app/different-device coexistence, exact reuse, concurrent starts,
+  current-session fallback, accepted and refused stop/cancellation, sibling-safe
+  and stale exits, root isolation, Run auto-open, synchronous presenter exit,
+  synchronous shutdown during presenter start, full shutdown, and
+  replacement-App isolation.
 
 ### R4.4 — Picker, commands, and stop-all
 

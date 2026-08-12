@@ -749,12 +749,23 @@ them, but reachability is not a support promise.
 
 :Android logcat
         Start or reveal Logcat for the selected application and online device.
+        Sessions are identified by exact application ID and device serial.
+        Starting another identity keeps existing sessions live. Revealing an
+        existing identity makes it current without restarting its reader.
         The default presenter resolves the installed package UID, so the stream
         includes application subprocesses and survives application PID
         restarts. A shared Android UID can also include sibling packages.
 
 :Android logcat stop
-        Stop Logcat for the current project without cancelling Build or Run.
+        Cancel the most recent pending Logcat start, or stop the current live
+        Logcat session for the project when no start is pending. A refused stop
+        or cancellation retains that session. A surviving session becomes
+        current after the current one stops or exits. Build and Run are not
+        cancelled.
+
+The public `status.logcat` value is aggregate for the current project: it is
+`running` while any session is live, otherwise `starting` while any start is
+pending, otherwise `stopped`.
 
 The native Logcat buffer retains a count- and byte-bounded local history and
 contains only the currently visible records. When its last window is hidden,

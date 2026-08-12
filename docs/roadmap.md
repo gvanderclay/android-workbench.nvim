@@ -209,7 +209,7 @@ decisions, and checkpoint contracts are recorded in
   while capture continues.
 - [x] R4.2 make native handles share one owned Logcat dock without sharing or
   replacing their readers.
-- [ ] R4.3 replace the single root Logcat slot with an independent,
+- [x] R4.3 replace the single root Logcat slot with an independent,
   generation-safe session registry keyed by application ID and device serial.
 - [ ] R4.4 add root-local session selection, current-session stop, and
   best-effort stop-all through deliberate command and facade contracts.

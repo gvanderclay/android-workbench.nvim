@@ -548,11 +548,22 @@ local ok, unexpected = xpcall(function()
       },
     },
   }
+  local old_stops = 0
   local old_entry = {
     identity = 'old-stream',
-    handle = { show = function() return true end, stop = function() return false end },
+    selected = 1,
+    handle = {
+      show = function() return true end,
+      stop = function()
+        old_stops = old_stops + 1
+        return false
+      end,
+    },
   }
-  replacement_app.logcats[root_one] = old_entry
+  local replacement_registry = replacement_app:_logcat_registry(root_one, true)
+  replacement_registry.entries[old_entry.identity] = old_entry
+  replacement_registry.current = old_entry.identity
+  replacement_registry.sequence = 1
   local replacement_error
   replacement_app:_open_logcat(
     { root = root_one },
@@ -561,9 +572,10 @@ local ok, unexpected = xpcall(function()
     true,
     function(err) replacement_error = err end
   )
-  expect('a failed presenter stop blocks replacement', replacement_error and replacement_error.code, 'logcat_stop_failed')
-  expect('a failed presenter stop starts no second stream', replacement_starts, 0)
-  expect('a failed presenter stop retains the current stream', replacement_app.logcats[root_one], old_entry)
+  expect('a sibling presenter starts without replacing the current stream', replacement_error, nil)
+  expect('a sibling presenter starts exactly once', replacement_starts, 1)
+  expect('a sibling presenter never stops the previous stream', old_stops, 0)
+  expect('a sibling presenter retains the previous stream', replacement_registry.entries[old_entry.identity], old_entry)
   replacement_app:shutdown()
 
   local native_runner_calls = {}
