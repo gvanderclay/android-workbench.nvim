@@ -757,10 +757,18 @@ them, but reachability is not a support promise.
         Stop Logcat for the current project without cancelling Build or Run.
 
 The native Logcat buffer retains a count- and byte-bounded local history and
-contains only the currently visible records. A window-local bar remains visible
-while following the stream. It shows the application/device identity, stream
-state, minimum level, follow state, and the most common controls. Press `?` for
-an owned popup containing every shortcut and the current filter state.
+contains only the currently visible records. When its last window is hidden,
+capture continues while retained history moves into bounded owner-only
+temporary files. Those files are unlinked immediately after opening and are
+removed on restoration, stop, buffer wipeout, or shutdown. Showing the buffer
+restores the newest retained history in order and reapplies its filters. If
+private storage cannot be created, the presenter warns and keeps the same
+bounded history in memory.
+
+A window-local bar remains visible while following the stream. It shows the
+application/device identity, stream state, minimum level, follow state, and the
+most common controls. Press `?` for an owned popup containing every shortcut
+and the current filter state.
 
 The buffer-local controls are:
 

@@ -1,5 +1,6 @@
 local Model = require 'android_workbench.logcat.model'
 local Runner = require 'android_workbench.runner'
+local Spool = require 'android_workbench.logcat.spool'
 
 local M = {}
 
@@ -160,6 +161,9 @@ function M.new(opts)
     error('android_workbench.logcat.native.new: uid_timeout_ms must be a positive integer', 2)
   end
   if opts.input ~= nil and type(opts.input) ~= 'function' then error('android_workbench.logcat.native.new: input must be a function', 2) end
+  if opts.spool_tempname ~= nil and type(opts.spool_tempname) ~= 'function' then
+    error('android_workbench.logcat.native.new: spool_tempname must be a function', 2)
+  end
 
   local max_records = opts.max_records or DEFAULT_MAX_RECORDS
   local max_line_bytes = opts.max_line_bytes or DEFAULT_MAX_LINE_BYTES
@@ -173,6 +177,7 @@ function M.new(opts)
   local input = opts.input or vim.ui.input
   local schedule = opts.schedule or vim.schedule
   local defer_fn = opts.defer_fn or vim.defer_fn
+  local spool_tempname = opts.spool_tempname or vim.fn.tempname
 
   return {
     start = function(request)
@@ -224,6 +229,12 @@ function M.new(opts)
         pending_error = nil,
         help_bufnr = nil,
         help_win = nil,
+        hidden = false,
+        restoring = false,
+        spool = nil,
+        spool_failed = false,
+        storage_generation = 0,
+        discard_history = false,
       }
       local namespace = vim.api.nvim_create_namespace(
         'android-workbench-logcat-' .. vim.fn.sha256(request.root .. '\0' .. request.device_serial .. '\0' .. request.application_id)
@@ -298,6 +309,10 @@ function M.new(opts)
       end
 
       local function render()
+        if state.hidden then
+          update_winbars()
+          return
+        end
         if state.paused or not set_modifiable(true) then
           update_winbars()
           return
@@ -343,8 +358,81 @@ function M.new(opts)
         return true
       end
 
-      local function append_records(records)
-        if #records == 0 or state.done then return end
+      local function compact_context(record)
+        if not record then return nil end
+        return {
+          timestamp = record.timestamp,
+          pid = record.pid,
+          tid = record.tid,
+          priority = record.priority,
+          level = record.level,
+          rank = record.rank,
+          tag = record.tag,
+        }
+      end
+
+      local function release_buffer_history()
+        state.rendered_records = 0
+        state.source_index = nil
+        if not set_modifiable(true) then return end
+        vim.api.nvim_buf_clear_namespace(state.bufnr, namespace, 0, -1)
+        vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
+        set_modifiable(false)
+      end
+
+      local function ensure_spool()
+        if state.spool or state.spool_failed or state.discard_history then return state.spool end
+        state.spool = Spool.new {
+          max_records = max_records,
+          max_bytes = max_retained_bytes,
+          tempname = spool_tempname,
+        }
+        return state.spool
+      end
+
+      local function encode_records(records)
+        local entries = {}
+        for _, record in ipairs(records) do
+          local encoded, value = pcall(vim.json.encode, record)
+          if not encoded then return nil, tostring(value) end
+          entries[#entries + 1] = { data = value, raw_bytes = #record.raw }
+        end
+        return entries
+      end
+
+      local function notify_spool_failure(err)
+        if state.spool_failed then return end
+        state.spool_failed = true
+        notify(notifications, 'warn', ('Could not use private Logcat history storage; retaining bounded history in memory: %s'):format(err))
+      end
+
+      local function append_to_spool(records)
+        if state.spool_failed then return records end
+        local spool = ensure_spool()
+        if not spool then return records end
+        local entries, encode_err = encode_records(records)
+        if not entries then
+          notify_spool_failure(encode_err)
+          return records
+        end
+        local accepted, append_err = spool:append(entries)
+        if append_err then notify_spool_failure(append_err) end
+        if accepted >= #records then return {} end
+        local remaining = {}
+        for index = accepted + 1, #records do
+          remaining[#remaining + 1] = records[index]
+        end
+        return remaining
+      end
+
+      local function reset_record_bytes()
+        state.record_bytes = 0
+        for _, record in ipairs(state.records) do
+          state.record_bytes = state.record_bytes + #record.raw
+        end
+      end
+
+      local function append_memory(records)
         local visible = {}
         for _, record in ipairs(records) do
           state.records[#state.records + 1] = record
@@ -352,7 +440,7 @@ function M.new(opts)
           if Model.matches(record, state.filters) then visible[#visible + 1] = record end
         end
         local trimmed = trim_records()
-        if state.paused then
+        if state.hidden or state.paused then
           update_winbars()
           return
         end
@@ -379,6 +467,31 @@ function M.new(opts)
         follow_tail()
       end
 
+      local function move_memory_to_spool()
+        if state.discard_history then
+          state.records = {}
+          state.record_bytes = 0
+          release_buffer_history()
+          return
+        end
+        local remaining = append_to_spool(state.records)
+        state.records = remaining
+        reset_record_bytes()
+        release_buffer_history()
+      end
+
+      local function append_records(records)
+        if #records == 0 or state.done or state.discard_history then return end
+        if state.hidden and not state.restoring then
+          records = append_to_spool(records)
+          if #records == 0 then
+            update_winbars()
+            return
+          end
+        end
+        append_memory(records)
+      end
+
       local function consume(data)
         if state.done or type(data) ~= 'string' or data == '' then return end
         local value = state.partial == '' and data or state.partial .. data
@@ -391,7 +504,7 @@ function M.new(opts)
           if newline - start <= max_line_bytes then
             local line = value:sub(start, newline - 1)
             local record = Model.parse_line(line, state.previous)
-            state.previous = record
+            state.previous = compact_context(record)
             records[#records + 1] = record
           else
             state.previous = nil
@@ -440,6 +553,89 @@ function M.new(opts)
         consume(data:sub(start))
       end
 
+      local function close_private_history(discard)
+        state.storage_generation = state.storage_generation + 1
+        state.restoring = false
+        if state.spool then state.spool:close() end
+        state.spool = nil
+        state.spool_failed = false
+        if discard then
+          state.records = {}
+          state.record_bytes = 0
+          state.source_index = nil
+          release_buffer_history()
+        end
+      end
+
+      local function decode_history(entries)
+        local records = {}
+        for _, entry in ipairs(entries or {}) do
+          local decoded, record = pcall(vim.json.decode, entry)
+          if not decoded or type(record) ~= 'table' or type(record.raw) ~= 'string' or #record.raw > max_line_bytes then
+            return nil, 'temporary history contained an invalid record'
+          end
+          records[#records + 1] = record
+        end
+        return records
+      end
+
+      local function enter_hidden()
+        if state.hidden then return end
+        state.hidden = true
+        close_help()
+        if state.restoring then
+          release_buffer_history()
+          return
+        end
+        move_memory_to_spool()
+      end
+
+      local function enter_visible()
+        state.hidden = false
+        if state.done or state.discard_history or state.restoring or not state.spool then
+          render()
+          return
+        end
+        local spool = state.spool
+        state.restoring = true
+        state.storage_generation = state.storage_generation + 1
+        local generation = state.storage_generation
+        local started = spool:read_all(function(err, entries)
+          if state.done or state.discard_history or state.storage_generation ~= generation or state.spool ~= spool then return end
+          state.spool = nil
+          state.restoring = false
+          state.spool_failed = false
+          if err then
+            notify_spool_failure(err)
+          else
+            local restored, decode_err = decode_history(entries)
+            if not restored then
+              notify_spool_failure(decode_err)
+            else
+              local current = state.records
+              state.records = restored
+              for _, record in ipairs(current) do
+                state.records[#state.records + 1] = record
+              end
+              reset_record_bytes()
+              trim_records()
+            end
+          end
+          if state.hidden then
+            state.spool_failed = false
+            move_memory_to_spool()
+          else
+            render()
+          end
+        end)
+        if not started then
+          state.restoring = false
+          state.spool = nil
+          notify_spool_failure 'temporary history could not begin restoration'
+          render()
+        end
+      end
+
       local function finish(result)
         if state.done then return false end
         state.done = true
@@ -450,7 +646,9 @@ function M.new(opts)
         state.picker_handle = nil
         state.child = nil
         close_help()
-        if not state.discarding_gap and state.partial ~= '' then
+        local discard_history = state.hidden or state.discard_history
+        close_private_history(false)
+        if not discard_history and not state.discarding_gap and state.partial ~= '' then
           local line = state.partial
           if line:sub(-1) == '\r' then line = line:sub(1, -2) end
           local record = Model.parse_line(line, state.previous)
@@ -458,6 +656,13 @@ function M.new(opts)
           state.records[#state.records + 1] = record
           state.record_bytes = state.record_bytes + #record.raw
           trim_records()
+        end
+        state.partial = ''
+        state.previous = nil
+        if discard_history then
+          state.records = {}
+          state.record_bytes = 0
+          release_buffer_history()
         end
         state.phase = result.status == 'failure' and 'failed' or 'stopped'
         render()
@@ -782,8 +987,7 @@ function M.new(opts)
           follow_tail()
         end, vim.tbl_extend('force', map_opts, { desc = 'Toggle Logcat follow' }))
         vim.keymap.set('n', 'c', function()
-          state.records = {}
-          state.record_bytes = 0
+          close_private_history(true)
           state.discarding_gap = state.discarding_gap or state.partial ~= ''
           state.discarding_cr = false
           state.partial = ''
@@ -805,13 +1009,20 @@ function M.new(opts)
         vim.keymap.set('n', 'q', hide, vim.tbl_extend('force', map_opts, { desc = 'Hide Logcat' }))
         vim.keymap.set('n', '?', show_shortcuts, vim.tbl_extend('force', map_opts, { desc = 'Show Logcat shortcuts' }))
 
-        vim.api.nvim_create_autocmd('BufWinEnter', { buffer = bufnr, callback = update_winbars })
-        vim.api.nvim_create_autocmd('BufHidden', { buffer = bufnr, callback = close_help })
+        vim.api.nvim_create_autocmd('BufWinEnter', {
+          buffer = bufnr,
+          callback = function()
+            enter_visible()
+            update_winbars()
+          end,
+        })
+        vim.api.nvim_create_autocmd('BufHidden', { buffer = bufnr, callback = enter_hidden })
         vim.api.nvim_create_autocmd('BufWipeout', {
           buffer = bufnr,
           once = true,
           callback = function()
             close_help()
+            handle:_abandon()
             handle:stop()
           end,
         })
@@ -824,6 +1035,7 @@ function M.new(opts)
         if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then return false end
         local windows = buffer_windows(state.bufnr)
         if #windows > 0 then
+          enter_visible()
           update_winbars()
           if show_opts.focus ~= false then vim.api.nvim_set_current_win(windows[1]) end
           return true
@@ -834,6 +1046,7 @@ function M.new(opts)
         vim.cmd(('botright %dsplit'):format(height))
         local log_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_buf(log_win, state.bufnr)
+        enter_visible()
         vim.wo[log_win].winfixheight = true
         update_winbars()
         if show_opts.focus == false and vim.api.nvim_win_is_valid(origin) then vim.api.nvim_set_current_win(origin) end
@@ -855,6 +1068,7 @@ function M.new(opts)
             update_winbars()
             return false
           end
+          if state.hidden then close_private_history(true) end
           close_help()
         else
           finish { status = 'stopped' }
@@ -862,12 +1076,31 @@ function M.new(opts)
         return true
       end
 
+      function handle:_abandon()
+        if state.discard_history then return false end
+        state.discard_history = true
+        close_help()
+        close_private_history(true)
+        return true
+      end
+
       function handle:status()
+        local spool_status = state.spool and state.spool:status()
+          or { records = 0, raw_bytes = 0, storage_bytes = 0, pending_bytes = 0, files = 0, pathnames = 0, mode = nil }
         return {
           phase = state.phase,
           paused = state.paused,
           follow = state.follow,
-          records = #state.records,
+          records = #state.records + spool_status.records,
+          retained_bytes = state.record_bytes + spool_status.raw_bytes,
+          in_memory_records = #state.records,
+          storage = state.restoring and 'restoring' or (state.hidden and not state.spool_failed and 'disk' or 'memory'),
+          spool_files = spool_status.files,
+          spool_pathnames = spool_status.pathnames,
+          spool_pending_bytes = spool_status.pending_bytes,
+          spool_storage_bytes = spool_status.storage_bytes,
+          spool_mode = spool_status.mode,
+          source_indexed = state.source_index ~= nil,
           filters = vim.deepcopy(state.filters),
           bufnr = state.bufnr,
           uid = state.uid,

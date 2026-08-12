@@ -1287,6 +1287,7 @@ function App:shutdown()
   self.logcats = {}
   for _, entry in pairs(logcats) do
     pcall(entry.handle.stop, entry.handle)
+    if type(entry.handle._abandon) == 'function' then pcall(entry.handle._abandon, entry.handle) end
   end
   for _, session in pairs(self.sessions) do
     pcall(session.close, session)

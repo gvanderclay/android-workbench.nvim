@@ -327,6 +327,39 @@ vimdoc and tests.
 - **Revisit when:** Ownership changes or new material introduces another
   license or attribution obligation.
 
+## AN011 — Spool hidden native Logcat history privately
+
+- **Status:** Accepted
+- **Decision:** Keep each native UID-scoped Logcat reader active when its last
+  window is hidden, but move its retained history out of parsed Lua records and
+  buffer lines into bounded private temporary storage. Restore the newest
+  retained history when the handle is shown again.
+- **Requirements:** Preserve the existing logical-line, record-count, and raw
+  record-byte bounds. Serialize asynchronous reads and writes, bound queued
+  payload, use at most two active rolling files, create files with mode `0600`,
+  and unlink each pathname immediately after opening. Stop, wipeout, terminal
+  exit, and shutdown must close every descriptor. Filters, pause, follow, and
+  capture identity remain in memory. A storage failure warns and falls back to
+  bounded memory.
+- **Considered:** Keeping every hidden history parsed in memory, stopping a
+  reader when hidden, retaining named temporary files, persisting captured
+  messages across Neovim sessions, and sharing one device reader.
+- **Rationale:** A hermetic measurement found that four saturated current
+  sessions added 47.34 MiB of RSS and eight added 99.80 MiB. Hidden spooling
+  follows Android Studio's memory-saver lifecycle without changing Workbench's
+  app-scoped capture model or making hidden state durable.
+- **Tradeoffs:** Hiding and showing now perform local filesystem I/O. Rolling
+  segment eviction can retain fewer records than the nominal per-session cap,
+  and one retired descriptor can live until its already-started write returns.
+  Unsupported hosts that cannot unlink an open file use bounded memory instead.
+- **Consequences:** Hidden buffers release their parsed record array, rendered
+  lines, and source index while ADB capture continues. The private spool module
+  is an implementation detail, and no pathname or persisted message history is
+  exposed to consumers.
+- **Revisit when:** Windows support is accepted, measured disk latency harms
+  interaction, captured-message persistence becomes deliberate scope, or a
+  shared collector is separately justified.
+
 ## Repository extraction status
 
 Moving the runtime into this repository does not change AN001–AN006. The module

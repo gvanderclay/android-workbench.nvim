@@ -24,6 +24,20 @@ local function contains_line(lines, expected)
   return false
 end
 
+local function line_index(lines, expected)
+  for index, line in ipairs(lines) do
+    if line == expected then return index end
+  end
+end
+
+local function line_count(lines, expected)
+  local count = 0
+  for _, line in ipairs(lines) do
+    if line == expected then count = count + 1 end
+  end
+  return count
+end
+
 local function buffer_lines(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then return {} end
   return vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -78,6 +92,7 @@ end
 
 local Model = require 'android_workbench.logcat.model'
 local Native = require 'android_workbench.logcat.native'
+local Spool = require 'android_workbench.logcat.spool'
 
 local temporary_root = vim.fn.tempname()
 vim.fn.mkdir(temporary_root, 'p')
@@ -155,6 +170,93 @@ vim.api.nvim_create_autocmd('FileType', {
 local ok, unexpected = xpcall(function()
   expect_false('zero logical-line byte bound is rejected', pcall(Native.new, { max_line_bytes = 0 }))
   expect_false('zero retained-record byte bound is rejected', pcall(Native.new, { max_retained_bytes = 0 }))
+
+  local spool_paths = {}
+  local spool_sequence = 0
+  local spool = Spool.new {
+    max_records = 4,
+    max_bytes = 100,
+    tempname = function()
+      spool_sequence = spool_sequence + 1
+      local path = vim.fs.joinpath(temporary_root, 'history-' .. spool_sequence)
+      spool_paths[#spool_paths + 1] = path
+      return path
+    end,
+  }
+  local accepted, spool_err = spool:append {
+    { data = 'one', raw_bytes = 3 },
+    { data = 'two', raw_bytes = 3 },
+    { data = 'three', raw_bytes = 5 },
+    { data = 'four', raw_bytes = 4 },
+    { data = 'five', raw_bytes = 4 },
+    { data = 'six', raw_bytes = 3 },
+  }
+  expect('private spool accepts bounded records', { accepted, spool_err }, { 6, nil })
+  for _, path in ipairs(spool_paths) do
+    expect('private spool path is unlinked immediately', vim.uv.fs_stat(path), nil)
+  end
+  expect_true('private spool writes remain bounded', spool:status().pending_bytes <= 2 * (100 * 6 + 4 * 256))
+  expect_true('private spool drains pending writes', vim.wait(1000, function() return spool:status().pending_bytes == 0 end, 10))
+  expect('private spool rotates to a file pair', spool:status().files, 2)
+  expect('private spool enforces owner-only mode', spool:status().mode, 384)
+  expect('private spool exposes no pathname', spool:status().pathnames, 0)
+  expect('private spool keeps the newest record window', spool:status().records, 4)
+  local restored_entries
+  expect_true(
+    'private spool begins asynchronous restoration',
+    spool:read_all(function(err, entries)
+      expect('private spool restoration succeeds', err, nil)
+      restored_entries = entries
+    end)
+  )
+  expect_true('private spool restoration completes', vim.wait(1000, function() return restored_entries ~= nil end, 10))
+  expect('private spool restores rotated records in order', restored_entries, { 'three', 'four', 'five', 'six' })
+  expect('private spool closes descriptors after restoration', spool:status().files, 0)
+
+  local partial_files = {}
+  local partial_fd = 0
+  local partial_uv = {
+    fs_open = function()
+      partial_fd = partial_fd + 1
+      partial_files[partial_fd] = ''
+      return partial_fd
+    end,
+    fs_unlink = function() return true end,
+    fs_fstat = function() return { mode = 384 } end,
+    fs_write = function(fd, data, offset, callback)
+      local current = partial_files[fd]
+      partial_files[fd] = current:sub(1, offset) .. data .. current:sub(offset + #data + 1)
+      callback(nil, #data)
+    end,
+    fs_read = function(fd, size, offset, callback) callback(nil, partial_files[fd]:sub(offset + 1, offset + math.min(size, 3))) end,
+    fs_close = function(fd)
+      partial_files[fd] = nil
+      return true
+    end,
+  }
+  local partial_spool = Spool.new {
+    max_records = 2,
+    max_bytes = 20,
+    uv = partial_uv,
+    tempname = function() return 'partial-history' end,
+    schedule = immediate,
+  }
+  partial_spool:append { { data = 'abcdef', raw_bytes = 6 } }
+  local partial_read
+  partial_spool:read_all(function(err, entries) partial_read = { err = err, entries = entries } end)
+  expect('private spool handles partial filesystem reads', partial_read, { err = nil, entries = { 'abcdef' } })
+
+  local close_path = vim.fs.joinpath(temporary_root, 'history-close')
+  local close_spool = Spool.new {
+    max_records = 2,
+    max_bytes = 20,
+    tempname = function() return close_path end,
+  }
+  close_spool:append { { data = 'pending', raw_bytes = 7 } }
+  expect('closing spool path is already unlinked', vim.uv.fs_stat(close_path), nil)
+  expect('private spool close is terminal once', close_spool:close(), true)
+  expect('duplicate private spool close is ignored', close_spool:close(), false)
+  expect_true('private spool close releases pending descriptors', vim.wait(1000, function() return close_spool:status().files == 0 end, 10))
 
   local parsed = Model.parse_line '2026-08-10 12:34:56.789 123 456 W ExampleTag: warning payload'
   expect('threadtime timestamp is parsed', parsed.timestamp, '2026-08-10 12:34:56.789')
@@ -419,6 +521,65 @@ local ok, unexpected = xpcall(function()
   expect_false('bounded history evicts the oldest record', contains_line(lines, '2026-08-10 12:01:00.001 101 301 I Bounded: record-01'))
   expect_true('bounded history retains the newest record', contains_line(lines, '2026-08-10 12:01:00.010 101 301 I Bounded: record-10'))
 
+  input_value = 'hidden'
+  press(bufnr, 't')
+  vim.api.nvim_win_close(log_win, false)
+  local hidden_status = handle:status()
+  expect('hidden history moves to private storage', hidden_status.storage, 'disk')
+  expect('hidden history releases parsed records', hidden_status.in_memory_records, 0)
+  expect('hidden history releases the source index', hidden_status.source_indexed, false)
+  expect_true('hidden history keeps at least one private spool open', type(hidden_status.spool_files) == 'number' and hidden_status.spool_files > 0)
+  expect('hidden history retains no spool pathname', hidden_status.spool_pathnames, 0)
+  expect('hidden history releases buffer lines', buffer_lines(bufnr), { '' })
+
+  local hidden_lines = {}
+  for index = 1, 6 do
+    hidden_lines[#hidden_lines + 1] = ('2026-08-10 12:02:00.%03d 101 301 I Hidden: record-%02d'):format(index, index)
+    output { stream = 'stdout', data = hidden_lines[#hidden_lines] .. '\n' }
+  end
+  local hidden_other = '2026-08-10 12:02:00.007 101 301 I Other: filtered'
+  output { stream = 'stdout', data = hidden_other .. '\n' }
+  hidden_status = handle:status()
+  expect('hidden output does not recreate parsed history', hidden_status.in_memory_records, 0)
+  expect_true('hidden history remains within its record bound', type(hidden_status.records) == 'number' and hidden_status.records <= 8)
+  expect_true(
+    'hidden history remains within its byte bound',
+    type(hidden_status.retained_bytes) == 'number' and hidden_status.retained_bytes <= 4 * 1024 * 1024
+  )
+
+  expect('hidden history can be shown again', handle:show { focus = false }, true)
+  expect_true('show restores private history', vim.wait(1000, function() return handle:status().storage == 'memory' end, 10))
+  log_win = vim.fn.bufwinid(bufnr)
+  lines = buffer_lines(bufnr)
+  local previous_row = 0
+  for _, line in ipairs(hidden_lines) do
+    expect_true('restored hidden history remains ordered', contains_line(lines, line))
+    local row = line_index(lines, line) or 0
+    expect_true('restored hidden history preserves stream order', row > previous_row)
+    previous_row = row
+  end
+  expect_false('restored history reapplies the active filter', contains_line(lines, hidden_other))
+  expect('restored history keeps the active filter', handle:status().filters.tag, 'hidden')
+  expect('restored history closes private spool files', handle:status().spool_files, 0)
+  expect('showing an already visible history is idempotent', handle:show { focus = false }, true)
+  expect('duplicate visibility does not duplicate restored history', line_count(buffer_lines(bufnr), hidden_lines[1]), 1)
+
+  vim.api.nvim_win_close(log_win, false)
+  expect('a hidden history can begin restoration', handle:show { focus = false }, true)
+  log_win = vim.fn.bufwinid(bufnr)
+  vim.api.nvim_win_close(log_win, false)
+  output { stream = 'stdout', data = 'hidden stale partial' }
+  local transition_line = '2026-08-10 12:02:00.008 101 301 I Hidden: transition'
+  output { stream = 'stdout', data = 'discarded suffix\n' .. transition_line .. '\n', truncated = true }
+  expect('a duplicate show joins the active restoration', handle:show { focus = false }, true)
+  expect_true('rapid hide and show completes once', vim.wait(1000, function() return handle:status().storage == 'memory' end, 10))
+  log_win = vim.fn.bufwinid(bufnr)
+  lines = buffer_lines(bufnr)
+  expect('rapid visibility does not duplicate restored history', line_count(lines, hidden_lines[1]), 1)
+  expect('output during restoration appears exactly once', line_count(lines, transition_line), 1)
+  expect_false('hidden truncation cannot stitch stale partial output', contains_line(lines, 'hidden stale partialdiscarded suffix'))
+  press(bufnr, 'x')
+
   expect('Logcat buffer type is non-file', vim.bo[bufnr].buftype, 'nofile')
   expect('Logcat buffer cannot create a swapfile', vim.bo[bufnr].swapfile, false)
   expect('Logcat buffer is not modifiable after rendering', vim.bo[bufnr].modifiable, false)
@@ -491,6 +652,64 @@ local ok, unexpected = xpcall(function()
   byte_runner.calls[2].callback(nil, { status = 'cancelled' })
   expect('teardown does not turn a discarded oversized line into a record', byte_handle:status().records, 1)
   expect('byte-bounded stream exits once', byte_exits[1] and byte_exits[1].status, 'stopped')
+
+  local cleanup_runner = fake_runner()
+  local cleanup_exits = {}
+  local cleanup_handle = Native.new({
+    runner = cleanup_runner.adapter,
+    schedule = immediate,
+    defer_fn = defer,
+    max_records = 4,
+    max_retained_bytes = 256,
+  }).start(request(function(result) cleanup_exits[#cleanup_exits + 1] = result end))
+  local cleanup_bufnr = cleanup_handle:status().bufnr
+  buffers_to_delete[#buffers_to_delete + 1] = cleanup_bufnr
+  cleanup_runner.calls[1].callback(nil, { status = 'success', stdout = 'package:com.example.app uid:30302\n' })
+  local cleanup_output = cleanup_runner.calls[2].request.on_output
+  local cleanup_line = '2026-08-10 12:20:00.001 101 301 I Cleanup: retained'
+  cleanup_output { stream = 'stdout', data = cleanup_line .. '\n' }
+  vim.api.nvim_win_close(vim.fn.bufwinid(cleanup_bufnr), false)
+  expect_true(
+    'hidden cleanup history reaches private storage',
+    vim.wait(1000, function()
+      local cleanup_status = cleanup_handle:status()
+      return cleanup_status.storage == 'disk' and cleanup_status.spool_pending_bytes == 0
+    end, 10)
+  )
+  expect('cleanup history begins restoration', cleanup_handle:show { focus = false }, true)
+  expect('stop during restoration is accepted', cleanup_handle:stop(), true)
+  cleanup_runner.calls[2].callback(nil, { status = 'cancelled' })
+  expect('stop during restoration exits once', cleanup_exits[1] and cleanup_exits[1].status, 'stopped')
+  expect_true(
+    'late restoration callback cannot retain a private descriptor',
+    vim.wait(1000, function() return cleanup_handle:status().spool_files == 0 end, 10)
+  )
+  expect_false('stop during restoration cannot repopulate released history', contains_line(buffer_lines(cleanup_bufnr), cleanup_line))
+  cleanup_runner.calls[2].callback({ code = 'late' }, { status = 'failure' })
+  cleanup_output { stream = 'stdout', data = cleanup_line .. '\n' }
+  expect('late cleanup callbacks cannot finish twice', #cleanup_exits, 1)
+
+  local wipe_runner = fake_runner()
+  local wipe_exits = {}
+  local wipe_handle = Native.new({
+    runner = wipe_runner.adapter,
+    schedule = immediate,
+    defer_fn = defer,
+    max_records = 4,
+    max_retained_bytes = 256,
+  }).start(request(function(result) wipe_exits[#wipe_exits + 1] = result end))
+  local wipe_bufnr = wipe_handle:status().bufnr
+  wipe_runner.calls[1].callback(nil, { status = 'success', stdout = 'package:com.example.app uid:30303\n' })
+  local wipe_output = wipe_runner.calls[2].request.on_output
+  wipe_output { stream = 'stdout', data = '2026-08-10 12:21:00.001 101 301 I Wipe: retained\n' }
+  vim.api.nvim_win_close(vim.fn.bufwinid(wipe_bufnr), false)
+  expect_true('wipeout fixture reaches private storage', vim.wait(1000, function() return wipe_handle:status().storage == 'disk' end, 10))
+  vim.api.nvim_buf_delete(wipe_bufnr, { force = true })
+  expect('wipeout requests stream cancellation once', wipe_runner.calls[2].cancellations, 1)
+  wipe_runner.calls[2].callback(nil, { status = 'cancelled' })
+  expect('wipeout stream exits once', wipe_exits[1] and wipe_exits[1].status, 'stopped')
+  wipe_output { stream = 'stdout', data = 'late wipe output\n' }
+  expect('wipeout discards retained history', wipe_handle:status().records, 0)
 
   local synchronous_calls = {}
   local synchronous_runner = {

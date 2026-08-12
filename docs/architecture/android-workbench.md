@@ -278,16 +278,26 @@ workflow's primary result.
 ### Logcat
 
 `logcat/model.lua` parses and filters neutral Logcat records.
-`logcat/native.lua` owns the ADB stream, bounded record history, scratch buffer,
-window-local status and controls, transient shortcut help, filtering, and source
-navigation. The scratch buffer contains records rather than scrolling UI
-chrome; the native presenter does not alter global mappings or window policy.
+`logcat/native.lua` owns the ADB stream, visible bounded record history, scratch
+buffer, window-local status and controls, transient shortcut help, filtering,
+and source navigation. `logcat/spool.lua` owns hidden native history. It
+serializes asynchronous reads and writes through at most two active rolling
+segments, bounds queued payload, creates each file as owner-only, and unlinks
+its pathname immediately. One retired segment may remain open only while its
+single in-flight write finishes. The scratch buffer contains records rather
+than scrolling UI chrome; the native presenter does not alter global mappings
+or window policy.
 
 The stream survives application process restarts by resolving the selected
 application UID. Replacing a root's stream requires the old presenter to accept
 stop; a late old exit must not clear a replacement. Logical-line and retained
 record bytes are bounded in addition to record count. An oversized logical line
-is discarded through its next newline before parsing resumes.
+is discarded through its next newline before parsing resumes. Hiding the last
+native window releases parsed records, buffer lines, and the source index while
+capture continues into private storage. Showing restores the newest records in
+order before reapplying filters. Stop, wipeout, terminal exit, and the native
+handle's private shutdown-abandon transition close that storage; the private
+transition is not part of the experimental replacement-port contract.
 
 ### Command, actions, and integrations
 

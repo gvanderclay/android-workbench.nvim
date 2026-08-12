@@ -199,6 +199,25 @@ feature-count comparison.
 - [x] Tag `v0.1.0` only after licensing, provenance, runtime, API, verification,
   and daily-use gates are complete.
 
+## R4 — Multi-session Logcat
+
+The verified Android Studio comparison, accepted first-version boundary,
+decisions, and checkpoint contracts are recorded in
+[`docs/logcat-sessions.md`](logcat-sessions.md).
+
+- [x] R4.1 move hidden native history into private bounded temporary storage
+  while capture continues.
+- [ ] R4.2 make native handles share one owned Logcat dock without sharing or
+  replacing their readers.
+- [ ] R4.3 replace the single root Logcat slot with an independent,
+  generation-safe session registry keyed by application ID and device serial.
+- [ ] R4.4 add root-local session selection, current-session stop, and
+  best-effort stop-all through deliberate command and facade contracts.
+- [ ] R4.5 make session navigation discoverable in the native Logcat view
+  without defining global mappings or custom-presenter UI policy.
+- [ ] R4.6 record exact same-device/different-app lifecycle, bounded storage,
+  and final process/file cleanup evidence.
+
 ## Deferred until demonstrated demand
 
 - Windows `gradlew.bat` support and broad historical Gradle/AGP matrices.

@@ -69,6 +69,7 @@ local logcat_calls = {}
 local logcat_handles = {}
 local logcat_shows = 0
 local logcat_stops = 0
+local logcat_abandons = 0
 local current_avd_name = 'Pixel_8_API_35'
 local hold_device_validation = false
 local pending_device_validation
@@ -377,6 +378,7 @@ local ports = {
         vim.schedule(function() request.on_exit { status = 'stopped' } end)
         return true
       end
+      function handle:_abandon() logcat_abandons = logcat_abandons + 1 end
       logcat_handles[#logcat_handles + 1] = handle
       return handle
     end,
@@ -1668,6 +1670,7 @@ local ok, unexpected = xpcall(function()
 
   local logcat_count_before_shutdown = #logcat_calls
   local logcat_stops_before_shutdown = logcat_stops
+  local logcat_abandons_before_shutdown = logcat_abandons
   local logcat_for_shutdown
   android.logcat({ root = root_one }, function(err, result) logcat_for_shutdown = { err = err, result = result } end)
   expect_true('logcat reopens before shutdown', vim.wait(1000, function() return logcat_for_shutdown ~= nil end, 10))
@@ -2043,6 +2046,7 @@ local ok, unexpected = xpcall(function()
   android.shutdown()
   expect('shutdown cancels an open action palette', shutdown_palette.cancel(), false)
   expect('shutdown stops the remaining logcat once', logcat_stops, logcat_stops_before_shutdown + 1)
+  expect('shutdown abandons retained Logcat storage once', logcat_abandons, logcat_abandons_before_shutdown + 1)
 end, debug.traceback)
 
 vim.fn.delete(root_one, 'rf')

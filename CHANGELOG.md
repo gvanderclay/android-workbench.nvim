@@ -19,6 +19,8 @@ while the first pre-1.0 release gates remain open.
 - A supported five-method `0.x` ADB service contract, including its conditional
   native emulator and Logcat composition limits.
 - Explicit `0.x` maturity labels for every replacement port.
+- Private bounded temporary storage for hidden native Logcat history, with
+  ordered restoration while capture remains active.
 
 ### Changed
 
