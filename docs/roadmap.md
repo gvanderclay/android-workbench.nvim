@@ -84,6 +84,15 @@ Workbench already executes direct argv.
 
 ## R2 — Effective native defaults and public boundary
 
+### R2.0 Discoverable native Logcat controls
+
+- [x] Keep application/device identity, stream state, and common controls
+  visible in a window-local bar while records follow the tail.
+- [x] Add buffer-local shortcut help that closes with the stream and exposes
+  every native Logcat action without a global mapping or dependency.
+- [x] Keep the scrolling buffer record-only while preserving user `FileType`
+  overrides for native buffer mappings.
+
 ### R2.1 Inspectable native task output
 
 - [ ] Add a bounded visible and reopenable owner for native runner output.

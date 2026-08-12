@@ -347,9 +347,15 @@ Malformed, partial, aliased, or identity-inconsistent results are rejected.
 :Android logcat stop
         Stop Logcat for the current project without cancelling Build or Run.
 
-The native Logcat buffer retains a count- and byte-bounded local history. Its
-buffer-local controls are:
+The native Logcat buffer retains a count- and byte-bounded local history and
+contains only the currently visible records. A window-local bar remains visible
+while following the stream. It shows the application/device identity, stream
+state, minimum level, follow state, and the most common controls. Press `?` for
+an owned popup containing every shortcut and the current filter state.
 
+The buffer-local controls are:
+
+        ?       Show all Logcat shortcuts and current filter state.
         p       Pause or resume rendering; capture remains bounded and active.
         f       Toggle following the newest visible line.
         c       Clear only the local view. It never runs `adb logcat -c`.
@@ -361,6 +367,8 @@ buffer-local controls are:
         [f/]f   Move to the previous or next source frame.
         s       Stop this Logcat stream.
         q       Hide the view without stopping capture.
+
+Inside shortcut help, `q`, `?`, or `<Esc>` closes only the popup.
 
 Filters reproject retained history and do not restart ADB. Logcat frames are
 navigable locations, not source diagnostics: the default presenter never

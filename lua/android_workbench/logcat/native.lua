@@ -9,7 +9,6 @@ local DEFAULT_MAX_LINE_BYTES = 64 * 1024
 local DEFAULT_MAX_RECORDS = 10000
 local DEFAULT_MAX_RETAINED_BYTES = 4 * 1024 * 1024
 local DEFAULT_UID_TIMEOUT_MS = 30000
-local HEADER_LINES = 4
 local MAX_SOURCE_ENTRIES = 50000
 
 local HIGHLIGHTS = {
@@ -213,6 +212,7 @@ function M.new(opts)
         discarding_cr = false,
         records = {},
         record_bytes = 0,
+        rendered_records = 0,
         filters = { level = 'verbose', tag = nil, text = nil },
         paused = false,
         follow = true,
@@ -222,6 +222,8 @@ function M.new(opts)
         picker_handle = nil,
         child_generation = 0,
         pending_error = nil,
+        help_bufnr = nil,
+        help_win = nil,
       }
       local namespace = vim.api.nvim_create_namespace(
         'android-workbench-logcat-' .. vim.fn.sha256(request.root .. '\0' .. request.device_serial .. '\0' .. request.application_id)
@@ -235,22 +237,23 @@ function M.new(opts)
         return true
       end
 
-      local function header()
-        local filters = state.filters
+      local function status_label()
         local status = state.phase:upper()
         if state.paused then status = status .. ' · PAUSED' end
-        return {
-          (' Android Logcat · %s · %s%s'):format(request.application_id, request.device_serial, state.uid and (' · uid ' .. state.uid) or ''),
-          (' %s · level≥%s · tag=%s · text=%s · follow=%s'):format(
-            status,
-            filters.level:upper(),
-            filters.tag or '*',
-            filters.text or '*',
-            state.follow and 'on' or 'off'
-          ),
-          ' p pause  f follow  c clear  l level  t tag  / text  x reset  <CR> jump  [f/]f frame  s stop  q hide',
-          '',
-        }
+        return status
+      end
+
+      local function winbar()
+        local filters = state.filters
+        local identity = ('%s · %s%s'):format(request.application_id, request.device_serial, state.uid and (' · uid ' .. state.uid) or '')
+        identity = identity:gsub('%%', '%%%%')
+        return (' [p] pause  [f] follow  [c] clear  [?] shortcuts %%=%%< Android Logcat · %s · %s · level≥%s · filters=%s · follow=%s '):format(
+          identity,
+          status_label(),
+          filters.level:upper(),
+          (filters.tag or filters.text) and 'on' or 'off',
+          state.follow and 'on' or 'off'
+        )
       end
 
       local function highlight_line(row, record)
@@ -270,14 +273,20 @@ function M.new(opts)
         end
       end
 
-      local function set_header()
-        if not set_modifiable(true) then return end
-        vim.api.nvim_buf_set_lines(state.bufnr, 0, HEADER_LINES, false, header())
-        set_modifiable(false)
-        vim.api.nvim_buf_clear_namespace(state.bufnr, namespace, 0, HEADER_LINES)
-        pcall(vim.api.nvim_buf_set_extmark, state.bufnr, namespace, 0, 0, { line_hl_group = 'Title', priority = 30 })
-        pcall(vim.api.nvim_buf_set_extmark, state.bufnr, namespace, 1, 0, { line_hl_group = 'Comment', priority = 30 })
-        pcall(vim.api.nvim_buf_set_extmark, state.bufnr, namespace, 2, 0, { line_hl_group = 'Comment', priority = 30 })
+      local function update_winbars()
+        local value = winbar()
+        for _, winid in ipairs(buffer_windows(state.bufnr)) do
+          pcall(vim.api.nvim_set_option_value, 'winbar', value, { scope = 'local', win = winid })
+        end
+      end
+
+      local function close_help()
+        local winid = state.help_win
+        local bufnr = state.help_bufnr
+        state.help_win = nil
+        state.help_bufnr = nil
+        if winid and vim.api.nvim_win_is_valid(winid) then pcall(vim.api.nvim_win_close, winid, true) end
+        if bufnr and vim.api.nvim_buf_is_valid(bufnr) then pcall(vim.api.nvim_buf_delete, bufnr, { force = true }) end
       end
 
       local function follow_tail()
@@ -290,11 +299,11 @@ function M.new(opts)
 
       local function render()
         if state.paused or not set_modifiable(true) then
-          set_header()
+          update_winbars()
           return
         end
         vim.api.nvim_buf_clear_namespace(state.bufnr, namespace, 0, -1)
-        local output = header()
+        local output = {}
         local visible = {}
         for _, record in ipairs(state.records) do
           if Model.matches(record, state.filters) then
@@ -303,13 +312,12 @@ function M.new(opts)
           end
         end
         vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, output)
+        state.rendered_records = #visible
         set_modifiable(false)
-        pcall(vim.api.nvim_buf_set_extmark, state.bufnr, namespace, 0, 0, { line_hl_group = 'Title', priority = 30 })
-        pcall(vim.api.nvim_buf_set_extmark, state.bufnr, namespace, 1, 0, { line_hl_group = 'Comment', priority = 30 })
-        pcall(vim.api.nvim_buf_set_extmark, state.bufnr, namespace, 2, 0, { line_hl_group = 'Comment', priority = 30 })
         for index, record in ipairs(visible) do
-          highlight_line(HEADER_LINES + index - 1, record)
+          highlight_line(index - 1, record)
         end
+        update_winbars()
         follow_tail()
       end
 
@@ -345,7 +353,7 @@ function M.new(opts)
         end
         local trimmed = trim_records()
         if state.paused then
-          set_header()
+          update_winbars()
           return
         end
         if trimmed then
@@ -353,12 +361,17 @@ function M.new(opts)
           return
         end
         if #visible == 0 or not set_modifiable(true) then return end
-        local start_row = vim.api.nvim_buf_line_count(state.bufnr)
+        local start_row = state.rendered_records
         local lines = {}
         for _, record in ipairs(visible) do
           lines[#lines + 1] = record.raw
         end
-        vim.api.nvim_buf_set_lines(state.bufnr, -1, -1, false, lines)
+        if state.rendered_records == 0 then
+          vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, lines)
+        else
+          vim.api.nvim_buf_set_lines(state.bufnr, -1, -1, false, lines)
+        end
+        state.rendered_records = state.rendered_records + #visible
         set_modifiable(false)
         for index, record in ipairs(visible) do
           highlight_line(start_row + index - 1, record)
@@ -436,6 +449,7 @@ function M.new(opts)
         cancel_handle(state.picker_handle)
         state.picker_handle = nil
         state.child = nil
+        close_help()
         if not state.discarding_gap and state.partial ~= '' then
           local line = state.partial
           if line:sub(-1) == '\r' then line = line:sub(1, -2) end
@@ -597,7 +611,7 @@ function M.new(opts)
         local current = vim.api.nvim_win_get_cursor(0)[1]
         local count = vim.api.nvim_buf_line_count(state.bufnr)
         local row = current + direction
-        while row >= HEADER_LINES + 1 and row <= count do
+        while row >= 1 and row <= count do
           local line = vim.api.nvim_buf_get_lines(state.bufnr, row - 1, row, false)[1]
           if Model.parse_frame(line) then
             vim.api.nvim_win_set_cursor(0, { row, 0 })
@@ -649,6 +663,100 @@ function M.new(opts)
         if vim.api.nvim_win_get_buf(winid) == state.bufnr and #vim.api.nvim_list_wins() > 1 then pcall(vim.api.nvim_win_close, winid, false) end
       end
 
+      local function shortcut_lines()
+        local filters = state.filters
+        return {
+          (' app     %s'):format(request.application_id),
+          (' device  %s'):format(request.device_serial),
+          (' uid     %s'):format(state.uid or 'resolving'),
+          (' state   %s'):format(status_label()),
+          '',
+          ' ?       Show this shortcut help',
+          ' p       Pause or resume rendering',
+          ' f       Toggle following the newest line',
+          ' c       Clear the local view',
+          ' l       Choose the minimum level',
+          ' t       Filter by tag text',
+          ' /       Filter by message text',
+          ' x       Reset all filters',
+          ' <CR>/gf Open the source frame under the cursor',
+          ' [f/]f   Move to the previous or next source frame',
+          ' s       Stop this Logcat stream',
+          ' q       Hide the Logcat window',
+          '',
+          (' level≥%s · tag=%s · text=%s · follow=%s'):format(
+            filters.level:upper(),
+            filters.tag or '*',
+            filters.text or '*',
+            state.follow and 'on' or 'off'
+          ),
+        }
+      end
+
+      local function show_shortcuts()
+        if state.done then return end
+        if state.help_win and vim.api.nvim_win_is_valid(state.help_win) then
+          vim.api.nvim_set_current_win(state.help_win)
+          return
+        end
+        close_help()
+
+        local lines = shortcut_lines()
+        local width = 1
+        for _, line in ipairs(lines) do
+          width = math.max(width, vim.fn.strdisplaywidth(line))
+        end
+        width = math.min(width, math.max(1, vim.o.columns - 4))
+        local height = math.min(#lines, math.max(1, vim.o.lines - vim.o.cmdheight - 4))
+        local bufnr = vim.api.nvim_create_buf(false, true)
+        state.help_bufnr = bufnr
+        pcall(vim.api.nvim_buf_set_name, bufnr, ('android-logcat-help://%d'):format(bufnr))
+        vim.bo[bufnr].buftype = 'nofile'
+        vim.bo[bufnr].bufhidden = 'wipe'
+        vim.bo[bufnr].swapfile = false
+        vim.bo[bufnr].undofile = false
+        vim.bo[bufnr].modeline = false
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+        vim.bo[bufnr].modifiable = false
+        vim.bo[bufnr].readonly = true
+
+        local close_opts = { buffer = bufnr, silent = true, desc = 'Close Logcat shortcuts' }
+        for _, lhs in ipairs { 'q', '<Esc>', '?' } do
+          vim.keymap.set('n', lhs, close_help, close_opts)
+        end
+        vim.api.nvim_create_autocmd('BufWipeout', {
+          buffer = bufnr,
+          once = true,
+          callback = function(args)
+            if state.help_bufnr == args.buf then
+              state.help_bufnr = nil
+              state.help_win = nil
+            end
+          end,
+        })
+
+        local opened, winid = pcall(vim.api.nvim_open_win, bufnr, true, {
+          relative = 'editor',
+          row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
+          col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+          width = width,
+          height = height,
+          style = 'minimal',
+          border = 'rounded',
+          title = ' Android Logcat shortcuts ',
+          title_pos = 'center',
+        })
+        if not opened then
+          close_help()
+          notify(notifications, 'error', ('Could not open Logcat shortcuts: %s'):format(winid))
+          return
+        end
+        state.help_win = winid
+        vim.wo[winid].cursorline = true
+        vim.wo[winid].wrap = false
+        vim.bo[bufnr].filetype = 'androidlogcathelp'
+      end
+
       local function install_buffer()
         local bufnr = vim.api.nvim_create_buf(false, true)
         state.bufnr = bufnr
@@ -670,7 +778,7 @@ function M.new(opts)
         end, vim.tbl_extend('force', map_opts, { desc = 'Pause/resume Logcat rendering' }))
         vim.keymap.set('n', 'f', function()
           state.follow = not state.follow
-          set_header()
+          update_winbars()
           follow_tail()
         end, vim.tbl_extend('force', map_opts, { desc = 'Toggle Logcat follow' }))
         vim.keymap.set('n', 'c', function()
@@ -695,11 +803,17 @@ function M.new(opts)
         vim.keymap.set('n', '[f', function() move_frame(-1) end, vim.tbl_extend('force', map_opts, { desc = 'Previous Logcat source frame' }))
         vim.keymap.set('n', 's', function() handle:stop() end, vim.tbl_extend('force', map_opts, { desc = 'Stop Logcat' }))
         vim.keymap.set('n', 'q', hide, vim.tbl_extend('force', map_opts, { desc = 'Hide Logcat' }))
+        vim.keymap.set('n', '?', show_shortcuts, vim.tbl_extend('force', map_opts, { desc = 'Show Logcat shortcuts' }))
 
+        vim.api.nvim_create_autocmd('BufWinEnter', { buffer = bufnr, callback = update_winbars })
+        vim.api.nvim_create_autocmd('BufHidden', { buffer = bufnr, callback = close_help })
         vim.api.nvim_create_autocmd('BufWipeout', {
           buffer = bufnr,
           once = true,
-          callback = function() handle:stop() end,
+          callback = function()
+            close_help()
+            handle:stop()
+          end,
         })
         vim.bo[bufnr].filetype = 'androidlogcat'
         render()
@@ -710,6 +824,7 @@ function M.new(opts)
         if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then return false end
         local windows = buffer_windows(state.bufnr)
         if #windows > 0 then
+          update_winbars()
           if show_opts.focus ~= false then vim.api.nvim_set_current_win(windows[1]) end
           return true
         end
@@ -720,6 +835,7 @@ function M.new(opts)
         local log_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_buf(log_win, state.bufnr)
         vim.wo[log_win].winfixheight = true
+        update_winbars()
         if show_opts.focus == false and vim.api.nvim_win_is_valid(origin) then vim.api.nvim_set_current_win(origin) end
         follow_tail()
         return true
@@ -730,15 +846,16 @@ function M.new(opts)
         local previous_phase = state.phase
         state.stop_requested = true
         state.phase = 'stopping'
-        set_header()
+        update_winbars()
         if state.child then
           local cancelled, result = pcall(state.child.cancel, state.child)
           if not cancelled or result == false then
             state.stop_requested = false
             state.phase = previous_phase
-            set_header()
+            update_winbars()
             return false
           end
+          close_help()
         else
           finish { status = 'stopped' }
         end
@@ -761,14 +878,14 @@ function M.new(opts)
       handle:show { focus = request.focus ~= false }
 
       state.phase = 'resolving-app'
-      set_header()
+      update_winbars()
       state.timer = defer_fn(function()
         state.timer = nil
         if state.done or state.phase ~= 'resolving-app' then return end
         state.pending_error =
           failure('uid_query_timeout', ('Resolving %s on %s timed out after %d ms.'):format(request.application_id, request.device_serial, uid_timeout_ms))
         state.phase = 'stopping'
-        set_header()
+        update_winbars()
         if state.child then
           local cancelled, result = pcall(state.child.cancel, state.child)
           if not cancelled or result == false then

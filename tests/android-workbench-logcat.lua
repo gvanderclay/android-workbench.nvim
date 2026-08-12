@@ -37,6 +37,12 @@ local function press(bufnr, lhs)
   vim.api.nvim_feedkeys(keys, 'mx', false)
 end
 
+local function buffer_mapping(bufnr, lhs)
+  for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(bufnr, 'n')) do
+    if mapping.lhs == lhs then return mapping end
+  end
+end
+
 local function fake_timer()
   local timer = { stops = 0, closes = 0, closing = false }
   function timer:stop() self.stops = self.stops + 1 end
@@ -217,6 +223,31 @@ local ok, unexpected = xpcall(function()
   end
   expect('user ftplugin mappings override native defaults', user_mapping and user_mapping.desc, 'User Logcat mapping')
 
+  local log_win = vim.fn.bufwinid(bufnr)
+  local winbar = log_win ~= -1 and vim.wo[log_win].winbar or ''
+  expect_true('Logcat controls remain visible in the window bar', winbar:find('[p] pause', 1, true) ~= nil)
+  expect_true('window bar advertises shortcut help', winbar:find('[?] shortcuts', 1, true) ~= nil)
+  expect_true('window bar truncates identity before controls', winbar:find('%<', 1, true) ~= nil)
+  expect_true('window bar retains application identity', winbar:find('com.example.app', 1, true) ~= nil)
+  expect_true('window bar retains device identity', winbar:find(device_serial, 1, true) ~= nil)
+  expect_false(
+    'shortcut legend is not stored in the scrolling log buffer',
+    table.concat(buffer_lines(bufnr), '\n'):find('p pause  f follow  c clear', 1, true) ~= nil
+  )
+
+  local help_mapping = buffer_mapping(bufnr, '?')
+  expect('Logcat help mapping is discoverable', help_mapping and help_mapping.desc, 'Show Logcat shortcuts')
+  if help_mapping then
+    press(bufnr, '?')
+    local help_win = vim.api.nvim_get_current_win()
+    local help_bufnr = vim.api.nvim_win_get_buf(help_win)
+    expect_true('shortcut help opens in a floating window', vim.api.nvim_win_get_config(help_win).relative ~= '')
+    expect_true('shortcut help lists pause', contains_line(buffer_lines(help_bufnr), ' p       Pause or resume rendering'))
+    expect_true('shortcut help shows current level', contains_line(buffer_lines(help_bufnr), ' level≥VERBOSE · tag=* · text=* · follow=on'))
+    press(help_bufnr, 'q')
+    expect_false('shortcut help closes locally', vim.api.nvim_win_is_valid(help_win))
+  end
+
   expect('UID query uses exact direct argv', runner.calls[1].request.argv, {
     '/fake/adb',
     '-s',
@@ -240,6 +271,7 @@ local ok, unexpected = xpcall(function()
     stdout = 'package:com.example.app.debug uid:10123\r\npackage:com.example.app uid:10101\r\n',
   })
   expect('exact package UID wins over a prefix match', handle:status().uid, 10101)
+  expect_true('window bar updates the resolved UID', vim.wo[log_win].winbar:find('uid 10101', 1, true) ~= nil)
   expect('UID resolution starts exactly one stream', #runner.calls, 2)
   expect('Logcat stream uses exact UID-scoped argv', runner.calls[2].request.argv, {
     '/fake/adb',
@@ -277,6 +309,8 @@ local ok, unexpected = xpcall(function()
 
   expect('split chunks and CRLF produce one record per logical line', handle:status().records, 5)
   local lines = buffer_lines(bufnr)
+  expect('Logcat buffer begins with the first record', lines[1], debug_line)
+  expect('Logcat buffer contains only records', #lines, 5)
   for name, line in pairs {
     ['debug record is rendered'] = debug_line,
     ['info record is rendered'] = info_line,
@@ -287,7 +321,6 @@ local ok, unexpected = xpcall(function()
     expect_true(name, contains_line(lines, line))
   end
 
-  local log_win = vim.fn.bufwinid(bufnr)
   local frame_row
   for row, line in ipairs(lines) do
     if line == frame_line then frame_row = row end
@@ -304,6 +337,7 @@ local ok, unexpected = xpcall(function()
   picker_choice = 'warn'
   press(bufnr, 'l')
   expect('level mapping updates minimum level', handle:status().filters.level, 'warn')
+  expect_true('window bar shows the current minimum level', vim.wo[log_win].winbar:find('level≥WARN', 1, true) ~= nil)
   lines = buffer_lines(bufnr)
   expect_false('level mapping hides lower levels', contains_line(lines, info_line))
   expect_true('level mapping retains equal levels', contains_line(lines, warn_line))
@@ -312,6 +346,7 @@ local ok, unexpected = xpcall(function()
   input_value = 'crashtag'
   press(bufnr, 't')
   expect('tag mapping updates filter', handle:status().filters.tag, 'crashtag')
+  expect_true('window bar shows an active tag or text filter', vim.wo[log_win].winbar:find('filters=on', 1, true) ~= nil)
   lines = buffer_lines(bufnr)
   expect_false('tag mapping hides another tag', contains_line(lines, info_line))
   expect_true('tag mapping matches without case sensitivity', contains_line(lines, warn_line))
@@ -329,21 +364,26 @@ local ok, unexpected = xpcall(function()
     tag = nil,
     text = nil,
   })
+  expect_true('window bar clears the active-filter indicator', vim.wo[log_win].winbar:find('filters=off', 1, true) ~= nil)
 
   press(bufnr, 'p')
   expect('pause mapping updates state', handle:status().paused, true)
+  expect_true('window bar makes paused state visible', vim.wo[log_win].winbar:find('PAUSED', 1, true) ~= nil)
   local paused_line = '2026-08-10 12:00:00.005 101 205 I Worker: arrived while paused'
   output { stream = 'stdout', data = paused_line .. '\n' }
   expect('paused stream still captures records', handle:status().records, 6)
   expect_false('paused stream does not mutate visible records', contains_line(buffer_lines(bufnr), paused_line))
   press(bufnr, 'p')
   expect('resume mapping updates state', handle:status().paused, false)
+  expect_false('window bar clears paused state after resume', vim.wo[log_win].winbar:find('PAUSED', 1, true) ~= nil)
   expect_true('resume renders records captured while paused', contains_line(buffer_lines(bufnr), paused_line))
 
   press(bufnr, 'f')
   expect('follow mapping disables follow', handle:status().follow, false)
+  expect_true('window bar shows disabled follow state', vim.wo[log_win].winbar:find('follow=off', 1, true) ~= nil)
   press(bufnr, 'f')
   expect('follow mapping restores follow', handle:status().follow, true)
+  expect_true('window bar shows restored follow state', vim.wo[log_win].winbar:find('follow=on', 1, true) ~= nil)
 
   press(bufnr, 'c')
   expect('clear mapping removes history', handle:status().records, 0)
@@ -386,7 +426,13 @@ local ok, unexpected = xpcall(function()
   local write_ok = pcall(vim.api.nvim_buf_set_lines, bufnr, -1, -1, false, { 'unsafe write' })
   expect_false('external writes respect buffer safety', write_ok)
 
+  local help_win_before_stop
+  if help_mapping then
+    press(bufnr, '?')
+    help_win_before_stop = vim.api.nvim_get_current_win()
+  end
   expect('first stop request succeeds', handle:stop(), true)
+  if help_win_before_stop then expect_false('stopping Logcat closes shortcut help', vim.api.nvim_win_is_valid(help_win_before_stop)) end
   expect('duplicate stop request is ignored', handle:stop(), false)
   expect('stop cancels the stream once', runner.calls[2].cancellations, 1)
   runner.calls[2].callback(nil, { status = 'cancelled' })

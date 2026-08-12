@@ -240,7 +240,9 @@ workflow's primary result.
 
 `logcat/model.lua` parses and filters neutral Logcat records.
 `logcat/native.lua` owns the ADB stream, bounded record history, scratch buffer,
-controls, filtering, and source navigation.
+window-local status and controls, transient shortcut help, filtering, and source
+navigation. The scratch buffer contains records rather than scrolling UI
+chrome; the native presenter does not alter global mappings or window policy.
 
 The stream survives application process restarts by resolving the selected
 application UID. Replacing a root's stream requires the old presenter to accept
