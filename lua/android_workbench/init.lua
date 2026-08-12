@@ -117,6 +117,21 @@ local instance
 ---@field device AndroidWorkbenchDeviceIdentity
 ---@field handle AndroidWorkbenchLogcatHandle
 
+---@class AndroidWorkbenchLogcatSession
+---@field application_id string
+---@field device_serial string
+---@field current boolean
+
+---@class AndroidWorkbenchLogcatSessionIdentity
+---@field application_id string
+---@field device_serial string
+
+---@class AndroidWorkbenchStopAllLogcatsResult
+---@field stopped integer
+---@field refused AndroidWorkbenchLogcatSessionIdentity[]
+---@field refused_total integer
+---@field refused_truncated boolean
+
 ---@class AndroidWorkbenchPorts
 ---@field adb? AndroidWorkbenchAdbService
 ---@field picker? AndroidWorkbenchPicker
@@ -415,6 +430,15 @@ function M.logcat(opts, callback)
 end
 
 ---@param opts? AndroidWorkbenchContext
+---@param callback? fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchLogcatSession?)
+---@return AndroidWorkbenchOperationHandle handle
+function M.select_logcat_session(opts, callback)
+  local action_context = context(opts)
+  local done = callback_or_noop(callback)
+  return app():select_logcat_session(action_context, done)
+end
+
+---@param opts? AndroidWorkbenchContext
 ---@return boolean? stopped
 ---@return AndroidWorkbenchError? error
 function M.stop_logcat(opts)
@@ -427,6 +451,21 @@ function M.stop_logcat(opts)
     message = error_message(err),
   } end
   return stopped, err
+end
+
+---@param opts? AndroidWorkbenchContext
+---@return AndroidWorkbenchStopAllLogcatsResult? result
+---@return AndroidWorkbenchError? error
+function M.stop_all_logcats(opts)
+  local action_context = context(opts)
+  local result, err = app():stop_all_logcats(action_context)
+  err = public_error(err)
+  if not result then Notify.emit {
+    level = 'error',
+    code = 'logcat_stop_all_failed',
+    message = error_message(err),
+  } end
+  return copy_public_dto(result), err
 end
 
 ---@param opts? AndroidWorkbenchContext

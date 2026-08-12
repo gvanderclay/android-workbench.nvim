@@ -23,6 +23,8 @@ while the first pre-1.0 release gates remain open.
   ordered restoration while capture remains active.
 - Independent root-local Logcat sessions keyed by application ID and device
   serial, including exact reuse and sibling-safe lifecycle handling.
+- Root-local Logcat session selection and best-effort stop-all commands, facade
+  methods, and contextual actions with bounded refusal reporting.
 
 ### Changed
 

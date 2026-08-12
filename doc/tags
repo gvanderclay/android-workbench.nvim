@@ -17,6 +17,7 @@ android-workbench.logcat()	android-workbench.txt	/*android-workbench.logcat()*
 android-workbench.open_actions()	android-workbench.txt	/*android-workbench.open_actions()*
 android-workbench.refresh()	android-workbench.txt	/*android-workbench.refresh()*
 android-workbench.run()	android-workbench.txt	/*android-workbench.run()*
+android-workbench.select_logcat_session()	android-workbench.txt	/*android-workbench.select_logcat_session()*
 android-workbench.select_target()	android-workbench.txt	/*android-workbench.select_target()*
 android-workbench.setup()	android-workbench.txt	/*android-workbench.setup()*
 android-workbench.show_status()	android-workbench.txt	/*android-workbench.show_status()*
@@ -25,6 +26,7 @@ android-workbench.shutdown()	android-workbench.txt	/*android-workbench.shutdown(
 android-workbench.start_emulator()	android-workbench.txt	/*android-workbench.start_emulator()*
 android-workbench.status()	android-workbench.txt	/*android-workbench.status()*
 android-workbench.stop()	android-workbench.txt	/*android-workbench.stop()*
+android-workbench.stop_all_logcats()	android-workbench.txt	/*android-workbench.stop_all_logcats()*
 android-workbench.stop_emulator()	android-workbench.txt	/*android-workbench.stop_emulator()*
 android-workbench.stop_logcat()	android-workbench.txt	/*android-workbench.stop_logcat()*
 android-workbench.txt	android-workbench.txt	/*android-workbench.txt*

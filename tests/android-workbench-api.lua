@@ -84,6 +84,7 @@ local hold_picker = false
 local picker_returns_nil = false
 local pending_picker
 local pending_discovery
+local r4_controls = {}
 
 local function complete_snapshot(root, targets, tasks)
   targets = vim.deepcopy(targets or {})
@@ -400,7 +401,9 @@ local ok, unexpected = xpcall(function()
   expect_true('target completion includes device', vim.tbl_contains(vim.fn.getcompletion('Android target d', 'cmdline'), 'device'))
   expect_true('emulator completion includes start', vim.tbl_contains(vim.fn.getcompletion('Android emulator s', 'cmdline'), 'start'))
   expect_true('emulator completion includes stop', vim.tbl_contains(vim.fn.getcompletion('Android emulator s', 'cmdline'), 'stop'))
+  expect_true('logcat completion includes sessions', vim.tbl_contains(vim.fn.getcompletion('Android logcat s', 'cmdline'), 'sessions'))
   expect_true('logcat completion includes stop', vim.tbl_contains(vim.fn.getcompletion('Android logcat s', 'cmdline'), 'stop'))
+  expect_true('logcat stop completion includes all', vim.tbl_contains(vim.fn.getcompletion('Android logcat stop a', 'cmdline'), 'all'))
   expect('completion does not construct the application', package.loaded['android_workbench.app'], nil)
 
   for _, suffix in ipairs { 'm', 'b', 'r', 'g', 'l', 'e', 'M', 'v', 'd', 'E' } do
@@ -425,6 +428,7 @@ local ok, unexpected = xpcall(function()
       'open_actions',
       'refresh',
       'run',
+      'select_logcat_session',
       'select_target',
       'setup',
       'show_status',
@@ -433,6 +437,7 @@ local ok, unexpected = xpcall(function()
       'start_emulator',
       'status',
       'stop',
+      'stop_all_logcats',
       'stop_emulator',
       'stop_logcat',
     })
@@ -699,7 +704,9 @@ local ok, unexpected = xpcall(function()
       'start_emulator',
       'stop_emulator',
       'show_logcat',
+      'select_logcat_session',
       'stop_logcat',
+      'stop_all_logcats',
       'select_app',
       'select_variant',
       'select_device',
@@ -723,7 +730,7 @@ local ok, unexpected = xpcall(function()
       logcat = 'running',
       selection = { app = {}, variant = 'debug', device = {} },
     },
-    { 'cancel_build', 'show_logcat', 'stop_logcat', 'status' }
+    { 'cancel_build', 'show_logcat', 'select_logcat_session', 'stop_logcat', 'stop_all_logcats', 'status' }
   )
   expect(
     'active run palette actions',
@@ -768,7 +775,7 @@ local ok, unexpected = xpcall(function()
       logcat = 'running',
       selection = { device = { serial = 'emulator-5554', avd_name = current_avd_name } },
     },
-    { 'cancel_emulator_stop', 'show_logcat', 'stop_logcat', 'status' }
+    { 'cancel_emulator_stop', 'show_logcat', 'select_logcat_session', 'stop_logcat', 'stop_all_logcats', 'status' }
   )
   local available_actions = require('android_workbench.actions').available { logcat = 'stopped', selection = {} }
   expect('picker items hide registry predicates', available_actions[1].predicate, nil)
@@ -789,11 +796,22 @@ local ok, unexpected = xpcall(function()
   local original_stop_emulator = android.stop_emulator
   local original_gradle_task = android.gradle_task
   local original_show_task_output = android.show_task_output
-  local emulator_command_calls = {}
+  local emulator_command_calls = {
+    original_select_logcat_session = android.select_logcat_session,
+    original_stop_logcat = android.stop_logcat,
+    original_stop_all_logcats = android.stop_all_logcats,
+  }
   android.start_emulator = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'start', context = captured_context } end
   android.stop_emulator = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'stop', context = captured_context } end
   android.gradle_task = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'gradle', context = captured_context } end
   android.show_task_output = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'output', context = captured_context } end
+  android.select_logcat_session = function(captured_context)
+    emulator_command_calls[#emulator_command_calls + 1] = { action = 'logcat_sessions', context = captured_context }
+  end
+  android.stop_logcat = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'logcat_stop', context = captured_context } end
+  android.stop_all_logcats = function(captured_context)
+    emulator_command_calls[#emulator_command_calls + 1] = { action = 'logcat_stop_all', context = captured_context }
+  end
   local command_context = { root = root_one, path = '/captured/android/source.kt', bufnr = 37 }
   expect('emulator start command dispatches', original_execute({ 'emulator', 'start' }, command_context), true)
   expect('emulator start command uses facade', emulator_command_calls[1], { action = 'start', context = command_context })
@@ -808,10 +826,24 @@ local ok, unexpected = xpcall(function()
   end
   expect('output command dispatches', original_execute({ 'output' }, command_context), true)
   expect('output command uses facade', emulator_command_calls[4], { action = 'output', context = command_context })
+  expect('Logcat sessions command dispatches', original_execute({ 'logcat', 'sessions' }, command_context), true)
+  expect('Logcat sessions command uses facade', emulator_command_calls[5], { action = 'logcat_sessions', context = command_context })
+  expect('Logcat current stop command dispatches', original_execute({ 'logcat', 'stop' }, command_context), true)
+  expect('Logcat current stop command uses facade', emulator_command_calls[6], { action = 'logcat_stop', context = command_context })
+  expect('Logcat stop-all command dispatches', original_execute({ 'logcat', 'stop', 'all' }, command_context), true)
+  expect('Logcat stop-all command uses facade', emulator_command_calls[7], { action = 'logcat_stop_all', context = command_context })
+  do
+    local invalid_notifications = #notifications
+    expect('Logcat stop rejects unknown actions', original_execute({ 'logcat', 'stop', 'later' }, command_context), false)
+    expect('invalid Logcat command uses the configured notification port', notifications[invalid_notifications + 1].code, 'invalid_command')
+  end
   android.start_emulator = original_start_emulator
   android.stop_emulator = original_stop_emulator
   android.gradle_task = original_gradle_task
   android.show_task_output = original_show_task_output
+  android.select_logcat_session = emulator_command_calls.original_select_logcat_session
+  android.stop_logcat = emulator_command_calls.original_stop_logcat
+  android.stop_all_logcats = emulator_command_calls.original_stop_all_logcats
   do
     command.execute = function() error 'command exploded' end
     local failed_command_notifications = #notifications
@@ -823,6 +855,8 @@ local ok, unexpected = xpcall(function()
   expect('emulator stop facade is public', type(android.stop_emulator), 'function')
   expect('Gradle-task facade is public', type(android.gradle_task), 'function')
   expect('task-output facade is public', type(android.show_task_output), 'function')
+  expect('Logcat-session facade is public', type(android.select_logcat_session), 'function')
+  expect('Logcat stop-all facade is public', type(android.stop_all_logcats), 'function')
   hold_picker = true
   pending_picker = nil
   local notification_count = #notifications
@@ -1316,6 +1350,39 @@ local ok, unexpected = xpcall(function()
   expect('status exposes running logcat independently', assert(android.status { root = root_one }).logcat, 'running')
   expect('existing logcat shows its view', logcat_shows, 1)
 
+  do
+    hold_picker = true
+    pending_picker = nil
+    r4_controls.selected = nil
+    android.select_logcat_session({ root = root_one }, function(err, session) r4_controls.selected = { err = err, session = session } end)
+    expect_true('public Logcat-session selection reaches the picker', pending_picker ~= nil)
+    expect_contract('Logcat-session picker request contract', pending_picker.request, PortContracts.picker_request)
+    expect('public Logcat-session picker owns a closed item', pending_picker.request.items, {
+      { application_id = 'example.app.debug', device_serial = 'emulator-5554', current = true },
+    })
+    expect('public Logcat-session picker marks current', pending_picker.request.current, pending_picker.request.items[1])
+    pending_picker.callback(nil, pending_picker.request.items[1])
+    expect_true('public Logcat-session selection completes', vim.wait(1000, function() return r4_controls.selected ~= nil end, 10))
+    expect('public Logcat-session selection succeeds', r4_controls.selected.err, nil)
+    expect('public Logcat-session result is closed', r4_controls.selected.session, {
+      application_id = 'example.app.debug',
+      device_serial = 'emulator-5554',
+      current = true,
+    })
+    r4_controls.selected.session.application_id = 'caller-mutated'
+    pending_picker = nil
+    r4_controls.owned = nil
+    android.select_logcat_session({ root = root_one }, function(err, session) r4_controls.owned = { err = err, session = session } end)
+    expect_true('second public Logcat-session selection reaches the picker', pending_picker ~= nil)
+    expect('public result mutation cannot alter a later picker item', pending_picker.request.items[1].application_id, 'example.app.debug')
+    pending_picker.callback(nil, nil)
+    expect_true('second public Logcat-session selection dismisses', vim.wait(1000, function() return r4_controls.owned ~= nil end, 10))
+    expect('public Logcat-session dismissal succeeds', r4_controls.owned.err, nil)
+    expect('public Logcat-session dismissal returns no result', r4_controls.owned.session, nil)
+    hold_picker = false
+    pending_picker = nil
+  end
+
   local stopped
   android.stop({ root = root_one }, function(err, result) stopped = { err = err, result = result } end)
   expect_true('stop completes', vim.wait(1000, function() return stopped ~= nil end, 10))
@@ -1678,7 +1745,16 @@ local ok, unexpected = xpcall(function()
   expect('later provider mutation cannot change persisted target identity', state_by_root[root_six].app, { build_path = ':', project_path = ':app' })
   expect('later provider mutation cannot change the current snapshot', assert(android.status { root = root_six }).targets, 1)
   expect('later provider mutation does not force rediscovery', discovery_calls[root_six], 2)
-  expect('custom containment Logcat can be stopped independently', android.stop_logcat { root = root_six }, true)
+  do
+    r4_controls.stopped, r4_controls.stop_err = android.stop_all_logcats { root = root_six }
+    expect('custom containment Logcat stop-all succeeds', r4_controls.stop_err, nil)
+    expect('custom containment Logcat stop-all reports its result', r4_controls.stopped, {
+      stopped = 1,
+      refused = {},
+      refused_total = 0,
+      refused_truncated = false,
+    })
+  end
 
   local logcat_count_before_shutdown = #logcat_calls
   local logcat_stops_before_shutdown = logcat_stops

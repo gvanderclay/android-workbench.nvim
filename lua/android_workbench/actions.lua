@@ -62,7 +62,9 @@ local registry = {
   },
   { id = 'open_logcat', label = 'Open Logcat', argv = { 'logcat' }, predicate = logcat_stopped },
   { id = 'show_logcat', label = 'Show Logcat', argv = { 'logcat' }, predicate = logcat_running },
-  { id = 'stop_logcat', label = 'Stop Logcat', argv = { 'logcat', 'stop' }, predicate = logcat_active },
+  { id = 'select_logcat_session', label = 'Select Logcat session', argv = { 'logcat', 'sessions' }, predicate = logcat_running },
+  { id = 'stop_logcat', label = 'Stop current Logcat session', argv = { 'logcat', 'stop' }, predicate = logcat_active },
+  { id = 'stop_all_logcats', label = 'Stop all Logcat sessions', argv = { 'logcat', 'stop', 'all' }, predicate = logcat_running },
   { id = 'select_app', label = 'Select application', argv = { 'target', 'app' }, predicate = idle },
   {
     id = 'select_variant',

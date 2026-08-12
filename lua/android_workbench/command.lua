@@ -2,10 +2,11 @@ local M = {}
 
 local SUBCOMMANDS = { 'build', 'cancel', 'emulator', 'gradle', 'logcat', 'output', 'refresh', 'run', 'status', 'stop', 'target' }
 local EMULATOR_ACTIONS = { 'start', 'stop' }
-local LOGCAT_ACTIONS = { 'stop' }
+local LOGCAT_ACTIONS = { 'sessions', 'stop' }
+local LOGCAT_STOP_ACTIONS = { 'all' }
 local TARGETS = { 'app', 'device', 'variant' }
 local USAGE =
-  'Usage: :Android [build | run | gradle | output | stop | cancel | emulator start | emulator stop | logcat [stop] | status | refresh | target app | target variant | target device]'
+  'Usage: :Android [build | run | gradle | output | stop | cancel | emulator start | emulator stop | logcat [sessions | stop [all]] | status | refresh | target app | target variant | target device]'
 
 local function matches(candidates, lead)
   local result = {}
@@ -28,6 +29,7 @@ function M.complete(arg_lead, command_line, cursor_position)
   if position == 3 and words[2] == 'target' then return matches(TARGETS, arg_lead) end
   if position == 3 and words[2] == 'emulator' then return matches(EMULATOR_ACTIONS, arg_lead) end
   if position == 3 and words[2] == 'logcat' then return matches(LOGCAT_ACTIONS, arg_lead) end
+  if position == 4 and words[2] == 'logcat' and words[3] == 'stop' then return matches(LOGCAT_STOP_ACTIONS, arg_lead) end
   return {}
 end
 
@@ -112,11 +114,19 @@ function M.execute(args, context)
       android.logcat(context)
       return true
     end
+    if #args == 2 and args[2] == 'sessions' then
+      android.select_logcat_session(context)
+      return true
+    end
     if #args == 2 and args[2] == 'stop' then
       android.stop_logcat(context)
       return true
     end
-    return invalid 'The logcat command accepts only stop.'
+    if #args == 3 and args[2] == 'stop' and args[3] == 'all' then
+      android.stop_all_logcats(context)
+      return true
+    end
+    return invalid 'The logcat command accepts sessions, stop, or stop all.'
   end
 
   if subcommand == 'target' then

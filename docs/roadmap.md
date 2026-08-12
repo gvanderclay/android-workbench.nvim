@@ -211,7 +211,7 @@ decisions, and checkpoint contracts are recorded in
   replacing their readers.
 - [x] R4.3 replace the single root Logcat slot with an independent,
   generation-safe session registry keyed by application ID and device serial.
-- [ ] R4.4 add root-local session selection, current-session stop, and
+- [x] R4.4 add root-local session selection, current-session stop, and
   best-effort stop-all through deliberate command and facade contracts.
 - [ ] R4.5 make session navigation discoverable in the native Logcat view
   without defining global mappings or custom-presenter UI policy.

@@ -456,6 +456,7 @@ Android action starts.
                                             *android-workbench.stop_emulator()*
                                                      *android-workbench.stop()*
                                                    *android-workbench.logcat()*
+                                  *android-workbench.select_logcat_session()*
   handle = android.refresh(context, callback)
   handle = android.select_target(kind, context, callback)
   handle = android.build(context, callback)
@@ -465,12 +466,15 @@ Android action starts.
   handle = android.stop_emulator(context, callback)
   handle = android.stop(context, callback)
   handle = android.logcat(context, callback)
+  handle = android.select_logcat_session(context, callback)
 
                                          *android-workbench.show_task_output()*
                                              *android-workbench.stop_logcat()*
+                                        *android-workbench.stop_all_logcats()*
                                                   *android-workbench.cancel()*
   shown, err = android.show_task_output(context)
   stopped, err = android.stop_logcat(context)
+  result, err = android.stop_all_logcats(context)
   cancelled, err = android.cancel(context)
 
                                                 *android-workbench.shutdown()*
@@ -555,6 +559,33 @@ Successful action results guarantee these fields:
   start_emulator `{ kind = 'emulator_start', device }`
   stop_emulator  `{ kind = 'emulator_stop', device }`
   logcat         `{ kind = 'logcat', target, device, handle }`
+
+`select_logcat_session()` returns the selected root-local session: >lua
+
+  {
+    application_id = 'example.app',
+    device_serial = 'emulator-5554',
+    current = true,
+  }
+<
+Picker dismissal returns `nil, nil`.
+
+`stop_all_logcats()` returns a best-effort summary: >lua
+
+  {
+    stopped = 2,
+    refused = {
+      { application_id = 'example.other', device_serial = 'emulator-5554' },
+    },
+    refused_total = 1,
+    refused_truncated = false,
+  }
+<
+It attempts every live session for the resolved root. Accepted sessions are
+removed and refused or throwing sessions remain live. `refused` contains at
+most 1,024 identities; `refused_total` counts all refusals and
+`refused_truncated` reports whether identities were omitted. Partial refusal is
+a successful best-effort result rather than an operational error.
 
 A target includes `id`, `build_path`, `build_root`, `project_path`,
 `project_dir`, `variant`, `application_id`, `assemble_task`, and optional
@@ -756,12 +787,26 @@ them, but reachability is not a support promise.
         includes application subprocesses and survives application PID
         restarts. A shared Android UID can also include sibling packages.
 
+:Android logcat sessions
+        Open a root-local picker containing every live Logcat session, sorted
+        by application ID and device serial. Labels include both identity
+        fields and mark the current session. Selecting an entry reveals its
+        existing view without stopping a sibling. If that exact generation
+        exits or is replaced while the picker is open, the selection is
+        rejected as stale.
+
 :Android logcat stop
         Cancel the most recent pending Logcat start, or stop the current live
         Logcat session for the project when no start is pending. A refused stop
         or cancellation retains that session. A surviving session becomes
         current after the current one stops or exits. Build and Run are not
         cancelled.
+
+:Android logcat stop all
+        Attempt to stop every live Logcat session for the current project.
+        Sessions that accept stop are removed; refused sessions remain live.
+        Other project roots and pending starts are not affected. The command
+        reports how many stopped and how many refused.
 
 The public `status.logcat` value is aggregate for the current project: it is
 `running` while any session is live, otherwise `starting` while any start is

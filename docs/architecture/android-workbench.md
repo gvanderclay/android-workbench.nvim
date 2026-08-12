@@ -51,9 +51,10 @@ prompt for trust, or start work. The first action constructs `App`.
 The supported pre-1.0 facade exposes setup, a side-effect-free Gradle-root
 membership query, status and action discovery, model refresh, target selection,
 emulator start/stop, Build/Run/application Stop, arbitrary Gradle tasks, native
-task-output reopen, Logcat start/stop, cancellation, and shutdown. `setup()`
-returns no internal configuration data. Notification fallback is owned by a
-private module rather than an accidental `_notify` facade member.
+task-output reopen, Logcat start/session selection/current stop/root-local
+stop-all, cancellation, and shutdown. `setup()` returns no internal
+configuration data. Notification fallback is owned by a private module rather
+than an accidental `_notify` facade member.
 
 Root-aware facade calls accept only `bufnr`, `path`, and `root` context fields.
 Invalid setup, context, callback, and target-kind inputs are programmer errors
@@ -132,6 +133,10 @@ registry and may survive task completion. Each root retains independent live
 entries keyed by application ID and device serial, independently cancellable
 pending starts, and one current identity. Aggregate status is running when any
 entry is live, otherwise starting when any start is pending, otherwise stopped.
+Session selection snapshots closed owned identity items, then revalidates the
+exact entry token after picker return and again after `show()`. Root-local
+stop-all attempts every snapshotted live entry, removes only accepted exact
+tokens, retains refusals, and bounds its returned refusal identities.
 
 Public shutdown closes and discards the current instance. A later action may
 construct a fresh `App`. Shutdown revokes the old generation even when an
@@ -316,7 +321,8 @@ presenters retain complete ownership of their windows.
 `command.lua` parses the static command grammar over the public facade.
 `actions.lua` derives a presentation-neutral contextual action list.
 Integration modules implement one port each and do not own core lifecycle
-state.
+state. The Logcat session picker uses the existing supported picker port; picker
+items carry only application ID, device serial, and current-session state.
 
 Optional modules must defer their external `require()` calls until their
 adapter is selected or invoked. Package startup and native defaults do not load

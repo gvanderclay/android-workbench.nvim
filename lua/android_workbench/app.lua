@@ -14,6 +14,8 @@ local Trust = require 'android_workbench.trust'
 
 local M = {}
 
+local MAX_LOGCAT_STOP_REFUSALS = 1024
+
 local function pack(...) return { n = select('#', ...), ... } end
 
 local App = {}
@@ -869,6 +871,32 @@ end
 
 local function logcat_identity(target, device) return table.concat({ target.application_id, device.serial }, '\0') end
 
+local function logcat_session_item(entry, current)
+  return {
+    application_id = entry.application_id,
+    device_serial = entry.device_serial,
+    current = current,
+  }
+end
+
+local function logcat_session_label(item) return ('%s · %s%s'):format(item.application_id, item.device_serial, item.current and ' (current)' or '') end
+
+local function logcat_session_selection(value)
+  if type(value) ~= 'table' then return nil end
+  for key in next, value do
+    if key ~= 'application_id' and key ~= 'device_serial' and key ~= 'current' then return nil end
+  end
+  local application_id = raw_string(value, 'application_id')
+  local device_serial = raw_string(value, 'device_serial')
+  local current = rawget(value, 'current')
+  if not application_id or not device_serial or type(current) ~= 'boolean' then return nil end
+  return {
+    application_id = application_id,
+    device_serial = device_serial,
+    current = current,
+  }
+end
+
 function App:_select_logcat(registry, identity)
   local entry = registry.entries[identity]
   if not entry then return nil end
@@ -1065,6 +1093,89 @@ function App:open_logcat(context, callback)
   return operation
 end
 
+---@param context? table
+---@param callback? fun(err: table?, result: table?)
+---@return table handle
+function App:select_logcat_session(context, callback)
+  callback = callback or function() end
+  local operation = self:_complete(callback)
+  local session, err = self:_session(context)
+  if not session then
+    vim.schedule(function() operation:finish(err) end)
+    return operation
+  end
+
+  local registry = self:_logcat_registry(session.root, false)
+  if not registry or not next(registry.entries) then
+    operation:finish(workbench_error('no_logcat_sessions', ('No Android Logcat sessions are running for %s.'):format(session.root), session.root))
+    return operation
+  end
+
+  local candidates = {}
+  local offered = {}
+  local current
+  for identity, entry in pairs(registry.entries) do
+    local item = logcat_session_item(entry, registry.current == identity)
+    candidates[#candidates + 1] = item
+    offered[identity] = { item = item, token = entry.token }
+    if item.current then current = item end
+  end
+  table.sort(candidates, function(left, right)
+    if left.application_id ~= right.application_id then return left.application_id < right.application_id end
+    return left.device_serial < right.device_serial
+  end)
+
+  operation:start_child(
+    function(done) return self:_pick(session, 'Android Logcat sessions', candidates, logcat_session_label, current, done) end,
+    function(picker_err, selected)
+      if operation.cancelled then return end
+      if picker_err then
+        operation:finish(picker_err)
+        return
+      end
+      if selected == nil then
+        operation:finish()
+        return
+      end
+
+      local picked = logcat_session_selection(selected)
+      local identity = picked and table.concat({ picked.application_id, picked.device_serial }, '\0') or nil
+      local candidate = identity and offered[identity] or nil
+      if not candidate or candidate.item.current ~= picked.current then
+        operation:finish(workbench_error('invalid_selection', 'The picker returned an unknown Android Logcat session.', session.root))
+        return
+      end
+
+      local latest_registry = self:_logcat_registry(session.root, false)
+      local entry = latest_registry and latest_registry.entries[identity] or nil
+      if latest_registry ~= registry or not entry or entry.token ~= candidate.token then
+        operation:finish(workbench_error('stale_logcat_session', 'The selected Android Logcat session changed while the picker was open.', session.root))
+        return
+      end
+
+      local shown, show_result = pcall(entry.handle.show, entry.handle, { focus = true })
+      if not shown or show_result == false then
+        operation:finish(workbench_error('logcat_show_failed', 'Could not show Android Logcat.', session.root, shown and nil or tostring(show_result)))
+        return
+      end
+      if self.closed or operation.cancelled then return end
+
+      latest_registry = self:_logcat_registry(session.root, false)
+      entry = latest_registry and latest_registry.entries[identity] or nil
+      if latest_registry ~= registry or not entry or entry.token ~= candidate.token then
+        operation:finish(workbench_error('stale_logcat_session', 'The selected Android Logcat session changed while it was being shown.', session.root))
+        return
+      end
+
+      self:_select_logcat(registry, identity)
+      self:_emit('info', ('Selected Logcat for %s on %s.'):format(entry.application_id, entry.device_serial))
+      operation:finish(nil, logcat_session_item(entry, true))
+    end,
+    function(start_err) return workbench_error('picker_failed', 'Could not open the Android Logcat session picker.', session.root, tostring(start_err)) end
+  )
+  return operation
+end
+
 function App:stop_logcat(context)
   local session, err = self:_session(context)
   if not session then return nil, err end
@@ -1095,6 +1206,57 @@ function App:stop_logcat(context)
   self:_remove_logcat(session.root, entry.identity, entry.token)
   self:_emit('info', 'Stopped Android Logcat.')
   return true
+end
+
+function App:stop_all_logcats(context)
+  local session, err = self:_session(context)
+  if not session then return nil, err end
+
+  local registry = self:_logcat_registry(session.root, false)
+  if not registry or not next(registry.entries) then
+    return nil, workbench_error('logcat_not_running', ('Android Logcat is not running for %s.'):format(session.root), session.root)
+  end
+
+  local entries = {}
+  for _, entry in pairs(registry.entries) do
+    entries[#entries + 1] = entry
+  end
+  table.sort(entries, function(left, right)
+    if left.application_id ~= right.application_id then return left.application_id < right.application_id end
+    return left.device_serial < right.device_serial
+  end)
+
+  local result = {
+    stopped = 0,
+    refused = {},
+    refused_total = 0,
+    refused_truncated = false,
+  }
+  for _, entry in ipairs(entries) do
+    local stopped, stop_result = pcall(entry.handle.stop, entry.handle)
+    if stopped and stop_result ~= false then
+      if self:_remove_logcat(session.root, entry.identity, entry.token) then result.stopped = result.stopped + 1 end
+    else
+      result.refused_total = result.refused_total + 1
+      if #result.refused < MAX_LOGCAT_STOP_REFUSALS then
+        result.refused[#result.refused + 1] = {
+          application_id = entry.application_id,
+          device_serial = entry.device_serial,
+        }
+      end
+    end
+  end
+  result.refused_truncated = result.refused_total > #result.refused
+
+  if result.refused_total > 0 then
+    self:_emit(
+      'warn',
+      ('Stopped %d Android Logcat session%s; %d could not be stopped.'):format(result.stopped, result.stopped == 1 and '' or 's', result.refused_total)
+    )
+  else
+    self:_emit('info', ('Stopped %d Android Logcat session%s.'):format(result.stopped, result.stopped == 1 and '' or 's'))
+  end
+  return result
 end
 
 function App:_start_workflow(kind, context, callback)

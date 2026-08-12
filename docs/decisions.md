@@ -421,6 +421,39 @@ vimdoc and tests.
   capture identity is accepted, or a supported presenter contract needs richer
   session metadata.
 
+## AN014 — Expose root-local Logcat controls through the picker port
+
+- **Status:** Accepted
+- **Decision:** Use the existing supported picker port to select live Logcat
+  sessions by application ID and device serial. Keep current-session stop as the
+  narrow command and add a synchronous best-effort stop-all for live sessions
+  under one canonical root.
+- **Requirements:** Give the picker closed owned identity items, mark the
+  current item, and revalidate the exact entry generation before showing it.
+  Treat dismissal as success, reject mutated or stale choices, and preserve
+  picker cancellation and shutdown semantics. Stop-all attempts every
+  snapshotted live entry, removes only accepted exact generations, retains
+  refusals, and reports at most 1,024 refusal identities plus an exact total and
+  truncation flag.
+- **Considered:** Native-only tab controls, exposing registry entries or handles
+  directly, making a new picker abstraction, failing stop-all at the first
+  refusal, and returning an unbounded refusal list.
+- **Rationale:** The supported picker port already supplies native and optional
+  presentation without coupling App lifecycle to a UI. Closed identity results
+  are enough to select safely, while best-effort stopping gives cleanup a useful
+  result even when one custom presenter refuses.
+- **Tradeoffs:** Stop-all covers live sessions, not pending starts; current stop
+  remains the way to cancel the most recent pending start. Partial refusal is a
+  successful result that callers must inspect. The public picker does not add a
+  shortcut inside the native Logcat buffer; that remains R4.5.
+- **Consequences:** Commands, the facade, and contextual actions share one
+  root-local lifecycle. Custom pickers receive neutral items, custom Logcat
+  presenters retain their own window policy, and another root is never listed
+  or stopped.
+- **Revisit when:** Pending-start cleanup needs an aggregate public result, a
+  real consumer needs richer session metadata, or R4.5 shows that another
+  presentation-neutral action is required.
+
 ## Repository extraction status
 
 Moving the runtime into this repository does not change AN001–AN006. The module

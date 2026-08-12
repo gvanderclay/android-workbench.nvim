@@ -1,7 +1,7 @@
 # Multi-session Logcat research and plan
 
-Status: R4.1 through R4.3 are implemented and verified. R4.4 through R4.6
-remain planned post-`v0.1.0` work.
+Status: R4.1 through R4.4 are implemented and verified. R4.5 and R4.6 remain
+planned post-`v0.1.0` work.
 
 ## Desired outcome
 
@@ -135,8 +135,9 @@ the single App slot with a root-local registry keyed by application ID and
 device serial. Different identities now stay live together; opening an exact
 identity reveals it and makes it current. Pending starts are tracked
 independently, status remains aggregate, and exact generation tokens prevent a
-late exit from removing a successor or sibling. The remaining layers are the
-public picker and commands for choosing and stopping those entries.
+late exit from removing a successor or sibling. R4.4 adds the public picker and
+commands for choosing and stopping those entries. Native in-buffer
+discoverability and exact integration evidence remain.
 
 One hermetic clean-Neovim measurement fed 10,000 synthetic records of about 440
 bytes into each native session. Four saturated sessions added 47.34 MiB of RSS;
@@ -324,7 +325,13 @@ instead of merely re-filtering device-wide history.
 - Manual proof: verify native and configured picker labels clearly distinguish
   two applications on one device.
 - Decision gate: none.
-- Status: pending.
+- Status: complete. The isolated native smoke installed
+  `com.example.workbenchsmoke` and `com.example.workbenchsmoke.second` on
+  `emulator-5554`, kept both UID-scoped readers live, showed sorted labels with
+  the current session marked, switched both directions without changing the
+  three-window layout or reader count, and stopped both readers through the
+  public stop-all command. Both app processes and generated Gradle output were
+  cleaned afterward.
 
 ### R4.5 — Discoverable native switching
 
