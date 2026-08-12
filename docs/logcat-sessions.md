@@ -1,7 +1,7 @@
 # Multi-session Logcat research and plan
 
-Status: R4.1 is implemented and verified. R4.2 through R4.6 remain planned
-post-`v0.1.0` work.
+Status: R4.1 and R4.2 are implemented and verified. R4.3 through R4.6 remain
+planned post-`v0.1.0` work.
 
 ## Desired outcome
 
@@ -129,9 +129,9 @@ The native buffer already has the independent behavior a session needs:
   to the presenter instance.
 
 R4.1 moves hidden native histories into private bounded temporary storage and
-restores them when shown. The remaining layers are a native dock that can
-switch among handles, a multi-entry App registry, and a way to choose among
-those entries.
+restores them when shown. R4.2 lets handles created by one native presenter
+switch their independent buffers through its owned bottom split. The remaining
+layers are a multi-entry App registry and a way to choose among those entries.
 
 One hermetic clean-Neovim measurement fed 10,000 synthetic records of about 440
 bytes into each native session. Four saturated sessions added 47.34 MiB of RSS;
@@ -262,10 +262,14 @@ instead of merely re-filtering device-wide history.
 - Automated proof: focused two-handle native contracts for window reuse, hidden
   spooling, independent filters and history, synchronous callbacks, and exact
   cleanup; then `make test`, `make test-format`, and `git diff --check`.
-- Manual proof: verify dock replacement and focus behavior while records arrive
-  rapidly.
+- Manual proof: deferred to R4.6 because the public App remains single-session
+  until R4.3; the native two-handle contract controls switching and output
+  arrival directly.
 - Decision gate: none.
-- Status: pending.
+- Status: complete. Focused two-handle contracts prove exact window reuse,
+  independent filtered history and readers, hidden spooling, focus and source
+  navigation, synchronous callbacks, narrow controls, ownership loss, unrelated
+  window protection, and independent cleanup.
 
 ### R4.3 — Independent App session registry
 

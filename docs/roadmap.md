@@ -207,7 +207,7 @@ decisions, and checkpoint contracts are recorded in
 
 - [x] R4.1 move hidden native history into private bounded temporary storage
   while capture continues.
-- [ ] R4.2 make native handles share one owned Logcat dock without sharing or
+- [x] R4.2 make native handles share one owned Logcat dock without sharing or
   replacing their readers.
 - [ ] R4.3 replace the single root Logcat slot with an independent,
   generation-safe session registry keyed by application ID and device serial.

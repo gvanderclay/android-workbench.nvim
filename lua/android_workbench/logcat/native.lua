@@ -178,6 +178,28 @@ function M.new(opts)
   local schedule = opts.schedule or vim.schedule
   local defer_fn = opts.defer_fn or vim.defer_fn
   local spool_tempname = opts.spool_tempname or vim.fn.tempname
+  local dock = { win = nil, source_win = nil }
+  local session_buffers = {}
+
+  local function usable_source_window(winid)
+    if not winid or not vim.api.nvim_win_is_valid(winid) then return false end
+    if vim.api.nvim_win_get_config(winid).relative ~= '' then return false end
+    return vim.bo[vim.api.nvim_win_get_buf(winid)].buftype == ''
+  end
+
+  local function owned_dock_window()
+    local winid = dock.win
+    if
+      not winid
+      or not vim.api.nvim_win_is_valid(winid)
+      or vim.api.nvim_win_get_config(winid).relative ~= ''
+      or not session_buffers[vim.api.nvim_win_get_buf(winid)]
+    then
+      dock.win = nil
+      return nil
+    end
+    return winid
+  end
 
   return {
     start = function(request)
@@ -749,14 +771,8 @@ function M.new(opts)
       end
 
       local function open_source(path, line)
-        local function usable(winid)
-          if not winid or not vim.api.nvim_win_is_valid(winid) or vim.api.nvim_win_get_buf(winid) == state.bufnr then return false end
-          if vim.api.nvim_win_get_config(winid).relative ~= '' then return false end
-          return vim.bo[vim.api.nvim_win_get_buf(winid)].buftype == ''
-        end
-
         local target_win = state.source_win
-        if not usable(target_win) then
+        if not usable_source_window(target_win) then
           vim.cmd 'aboveleft new'
           target_win = vim.api.nvim_get_current_win()
         else
@@ -965,6 +981,7 @@ function M.new(opts)
       local function install_buffer()
         local bufnr = vim.api.nvim_create_buf(false, true)
         state.bufnr = bufnr
+        session_buffers[bufnr] = true
         local name = vim.fn.sha256(request.root .. '\0' .. request.device_serial .. '\0' .. request.application_id)
         vim.api.nvim_buf_set_name(bufnr, ('android-logcat://%s/%d'):format(name, bufnr))
         vim.bo[bufnr].buftype = 'nofile'
@@ -1020,7 +1037,12 @@ function M.new(opts)
         vim.api.nvim_create_autocmd('BufWipeout', {
           buffer = bufnr,
           once = true,
-          callback = function()
+          callback = function(args)
+            session_buffers[args.buf] = nil
+            if dock.win and vim.api.nvim_win_is_valid(dock.win) then
+              local ok, dock_bufnr = pcall(vim.api.nvim_win_get_buf, dock.win)
+              if ok and dock_bufnr == args.buf then dock.win = nil end
+            end
             close_help()
             handle:_abandon()
             handle:stop()
@@ -1042,12 +1064,20 @@ function M.new(opts)
         end
 
         local origin = vim.api.nvim_get_current_win()
-        if vim.api.nvim_win_get_buf(origin) ~= state.bufnr then state.source_win = origin end
-        vim.cmd(('botright %dsplit'):format(height))
-        local log_win = vim.api.nvim_get_current_win()
-        vim.api.nvim_win_set_buf(log_win, state.bufnr)
+        if usable_source_window(origin) then dock.source_win = origin end
+        if usable_source_window(dock.source_win) then state.source_win = dock.source_win end
+        local log_win = owned_dock_window()
+        if log_win then
+          vim.api.nvim_win_set_buf(log_win, state.bufnr)
+        else
+          vim.cmd(('botright %dsplit'):format(height))
+          log_win = vim.api.nvim_get_current_win()
+          dock.win = log_win
+          vim.api.nvim_win_set_buf(log_win, state.bufnr)
+        end
         enter_visible()
         vim.wo[log_win].winfixheight = true
+        if show_opts.focus ~= false then vim.api.nvim_set_current_win(log_win) end
         update_winbars()
         if show_opts.focus == false and vim.api.nvim_win_is_valid(origin) then vim.api.nvim_set_current_win(origin) end
         follow_tail()

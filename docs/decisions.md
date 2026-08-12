@@ -360,6 +360,37 @@ vimdoc and tests.
   interaction, captured-message persistence becomes deliberate scope, or a
   shared collector is separately justified.
 
+## AN012 — Switch native Logcat buffers through one owned dock
+
+- **Status:** Accepted
+- **Decision:** Let every native Logcat session retain its own buffer and state,
+  while handles created by one native presenter reuse the standard bottom split
+  that presenter created. Showing a hidden handle replaces only the buffer in
+  that owned window and does not stop either reader.
+- **Requirements:** Keep dock ownership local to `Native.new()` and outside the
+  experimental Logcat port contract. Preserve focus for non-focused shows and
+  remember a usable source window across session switches. Focus a session that
+  is already manually visible. Never claim floating windows or replace a dock
+  after it displays an unrelated buffer.
+- **Considered:** Opening one bottom split per session, making the dock a module
+  global, exposing a public dock abstraction, forcing every custom presenter to
+  use the native layout, and implementing Android Studio-style tabs.
+- **Rationale:** One switching viewport avoids a stack of bottom splits while
+  independent buffers preserve normal Neovim arrangement and session-local
+  state. Presenter-local ownership supplies a useful dependency-free default
+  without constraining replacement presenters.
+- **Tradeoffs:** The default native presenter applies a small amount of window
+  policy. Manually replacing its dock buffer intentionally releases ownership,
+  so the next hidden-session show opens a fresh split rather than reclaiming
+  that window.
+- **Consequences:** Native session switches trigger the existing hide and show
+  storage transitions. Users may still display session buffers in other
+  windows, and custom `ports.logcat` implementations remain free to use tabs,
+  floats, external UIs, or no window at all.
+- **Revisit when:** Daily use needs simultaneous native panes as a first-class
+  action, tabpage-local docks become necessary, or an external consumer needs a
+  reusable presentation coordinator.
+
 ## Repository extraction status
 
 Moving the runtime into this repository does not change AN001–AN006. The module

@@ -765,6 +765,14 @@ restores the newest retained history in order and reapplies its filters. If
 private storage cannot be created, the presenter warns and keeps the same
 bounded history in memory.
 
+Handles created by one native presenter keep independent buffers, histories,
+filters, and readers while sharing the bottom split created by that presenter.
+Showing another hidden handle replaces only the buffer in that owned split.
+If a handle is already visible in a manually arranged window, `show()` uses
+that window instead. If the owned split is closed or changed to an unrelated
+buffer, the next `show()` creates a new bottom split and leaves the unrelated
+window untouched. A custom `ports.logcat` presenter owns its own window policy.
+
 A window-local bar remains visible while following the stream. It shows the
 application/device identity, stream state, minimum level, follow state, and the
 most common controls. Press `?` for an owned popup containing every shortcut

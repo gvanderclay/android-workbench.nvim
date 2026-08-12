@@ -604,6 +604,109 @@ local ok, unexpected = xpcall(function()
   expect('late stream completion cannot finish twice', #exits, 1)
   expect('completed stream cannot stop again', handle:stop(), false)
 
+  vim.cmd 'aboveleft new'
+  local dock_source_win = vim.api.nvim_get_current_win()
+  local dock_source_bufnr = vim.api.nvim_get_current_buf()
+  buffers_to_delete[#buffers_to_delete + 1] = dock_source_bufnr
+  vim.api.nvim_buf_set_name(dock_source_bufnr, vim.fs.joinpath(temporary_root, 'DockSource.kt'))
+  local dock_runner = fake_runner()
+  local dock_exits = {}
+  local dock_native = Native.new {
+    runner = dock_runner.adapter,
+    picker = picker,
+    notifications = {
+      emit = function(event) notifications[#notifications + 1] = event end,
+    },
+    input = input,
+    schedule = immediate,
+    defer_fn = defer,
+    height = 6,
+    max_records = 8,
+  }
+  local first_request = request(function(result) dock_exits[#dock_exits + 1] = { session = 'first', result = result } end)
+  first_request.application_id = 'com.example.first'
+  local first_handle = dock_native.start(first_request)
+  local first_bufnr = first_handle:status().bufnr
+  buffers_to_delete[#buffers_to_delete + 1] = first_bufnr
+  local dock_win = vim.fn.bufwinid(first_bufnr)
+  dock_runner.calls[1].callback(nil, { status = 'success', stdout = 'package:com.example.first uid:30401\n' })
+  local first_output = dock_runner.calls[2].request.on_output
+  local first_line = '2026-08-10 12:30:00.001 101 301 I First: visible'
+  local first_hidden_line = '2026-08-10 12:30:00.002 101 301 I First: hidden'
+  first_output { stream = 'stdout', data = first_line .. '\n' }
+  input_value = 'first'
+  press(first_bufnr, 't')
+
+  local windows_before_switch = #vim.api.nvim_list_wins()
+  local second_request = request(function(result) dock_exits[#dock_exits + 1] = { session = 'second', result = result } end)
+  second_request.application_id = 'com.example.second'
+  local second_handle = dock_native.start(second_request)
+  local second_bufnr = second_handle:status().bufnr
+  buffers_to_delete[#buffers_to_delete + 1] = second_bufnr
+  expect('another native handle reuses the owned Logcat dock', vim.fn.bufwinid(second_bufnr), dock_win)
+  expect('switching native handles opens no additional window', #vim.api.nvim_list_wins(), windows_before_switch)
+  expect('switching hides the previous native buffer', vim.fn.bufwinid(first_bufnr), -1)
+  expect('switching releases the previous parsed history', first_handle:status().in_memory_records, 0)
+  expect('switching moves the previous history to private storage', first_handle:status().storage, 'disk')
+  expect('switching does not stop the previous reader', dock_runner.calls[2].cancellations, 0)
+
+  dock_runner.calls[3].callback(nil, { status = 'success', stdout = 'package:com.example.second uid:30402\n' })
+  local second_output = dock_runner.calls[4].request.on_output
+  local second_line = '2026-08-10 12:31:00.001 101 301 I Second: visible'
+  local second_frame = '    at com.example.Crash.fail(Crash.kt:2)'
+  first_output { stream = 'stdout', data = first_hidden_line .. '\n' }
+  second_output { stream = 'stdout', data = second_line .. '\n' .. second_frame .. '\n' }
+  expect_true('current dock shows only the selected session', contains_line(buffer_lines(second_bufnr), second_line))
+  expect_false('current dock never mixes sibling history', contains_line(buffer_lines(second_bufnr), first_hidden_line))
+
+  expect('showing the first handle switches the owned dock back', first_handle:show { focus = false }, true)
+  expect('switch-back retains the exact owned dock window', vim.fn.bufwinid(first_bufnr), dock_win)
+  expect('switch-back hides the sibling buffer', vim.fn.bufwinid(second_bufnr), -1)
+  expect_true('switch-back restores the first private history', vim.wait(1000, function() return first_handle:status().storage == 'memory' end, 10))
+  expect_true('switch-back restores output captured while hidden', contains_line(buffer_lines(first_bufnr), first_hidden_line))
+  expect_false('switch-back retains independent filters', contains_line(buffer_lines(first_bufnr), second_line))
+  expect('switch-back retains the first session filter', first_handle:status().filters.tag, 'first')
+  expect('switch-back moves the sibling into private storage', second_handle:status().storage, 'disk')
+  expect('switch-back does not stop the sibling reader', dock_runner.calls[4].cancellations, 0)
+
+  vim.api.nvim_set_current_win(dock_source_win)
+  expect('non-focused show switches the owned dock', second_handle:show { focus = false }, true)
+  expect('non-focused show preserves source focus', vim.api.nvim_get_current_win(), dock_source_win)
+  expect('non-focused show still reuses the owned dock', vim.fn.bufwinid(second_bufnr), dock_win)
+  expect_true('non-focused show restores the selected session', vim.wait(1000, function() return second_handle:status().storage == 'memory' end, 10))
+  expect_true('narrow dock retains its shortcut controls', vim.wo[dock_win].winbar:find('[?] shortcuts', 1, true) ~= nil)
+  local second_frame_row = line_index(buffer_lines(second_bufnr), second_frame)
+  expect_true('switched session retains its source frame', second_frame_row ~= nil)
+  if second_frame_row then
+    vim.api.nvim_win_set_cursor(dock_win, { second_frame_row, 0 })
+    press(second_bufnr, 'gf')
+    expect('switched session opens source in the remembered source window', vim.api.nvim_get_current_win(), dock_source_win)
+    expect('switched session preserves the owned dock during source navigation', vim.fn.bufwinid(second_bufnr), dock_win)
+    expect('switched session resolves source normally', vim.api.nvim_buf_get_name(0), selected_source)
+  end
+
+  local unrelated_bufnr = vim.api.nvim_create_buf(false, false)
+  buffers_to_delete[#buffers_to_delete + 1] = unrelated_bufnr
+  vim.api.nvim_buf_set_name(unrelated_bufnr, vim.fs.joinpath(temporary_root, 'Unrelated.kt'))
+  vim.api.nvim_win_set_buf(dock_win, unrelated_bufnr)
+  expect('manual replacement leaves the unrelated buffer in place', vim.api.nvim_win_get_buf(dock_win), unrelated_bufnr)
+  local windows_before_reopen = #vim.api.nvim_list_wins()
+  expect('show opens a new dock after ownership is lost', first_handle:show { focus = false }, true)
+  local replacement_dock = vim.fn.bufwinid(first_bufnr)
+  expect_false('lost dock ownership never replaces an unrelated window', replacement_dock == dock_win)
+  expect('lost dock ownership preserves the unrelated window', vim.api.nvim_win_get_buf(dock_win), unrelated_bufnr)
+  expect('lost dock ownership creates exactly one replacement', #vim.api.nvim_list_wins(), windows_before_reopen + 1)
+  expect('replacement dock preserves source focus', vim.api.nvim_get_current_win(), dock_source_win)
+
+  expect('first dock session stops independently', first_handle:stop(), true)
+  dock_runner.calls[2].callback(nil, { status = 'cancelled' })
+  expect('second dock session stops independently', second_handle:stop(), true)
+  dock_runner.calls[4].callback(nil, { status = 'cancelled' })
+  expect('dock sessions each exit exactly once', #dock_exits, 2)
+  for _, winid in ipairs { dock_win, replacement_dock, dock_source_win } do
+    if vim.api.nvim_win_is_valid(winid) and #vim.api.nvim_list_wins() > 1 then pcall(vim.api.nvim_win_close, winid, true) end
+  end
+
   local byte_runner = fake_runner()
   local byte_exits = {}
   local byte_handle = Native.new({
@@ -722,7 +825,9 @@ local ok, unexpected = xpcall(function()
           return true
         end,
       }
-      if #synchronous_calls == 1 then callback(nil, { status = 'success', stdout = 'package:com.example.app uid:20201\n' }) end
+      if task.metadata.kind == 'android-logcat-uid' then
+        callback(nil, { status = 'success', stdout = ('package:%s uid:20201\n'):format(task.argv[#task.argv]) })
+      end
       return child
     end,
   }
@@ -734,14 +839,30 @@ local ok, unexpected = xpcall(function()
     height = 8,
   }
   local synchronous_handle = synchronous_native.start(request(function(result) synchronous_exits[#synchronous_exits + 1] = result end))
-  buffers_to_delete[#buffers_to_delete + 1] = synchronous_handle:status().bufnr
+  local synchronous_bufnr = synchronous_handle:status().bufnr
+  buffers_to_delete[#buffers_to_delete + 1] = synchronous_bufnr
+  local synchronous_dock_win = vim.fn.bufwinid(synchronous_bufnr)
   expect('synchronous UID resolution starts stream', #synchronous_calls, 2)
   expect('completed UID query handle is discarded', synchronous_calls[1].cancellations, 1)
+
+  local synchronous_second_request = request(function(result) synchronous_exits[#synchronous_exits + 1] = result end)
+  synchronous_second_request.application_id = 'com.example.synchronous'
+  local synchronous_second_handle = synchronous_native.start(synchronous_second_request)
+  local synchronous_second_bufnr = synchronous_second_handle:status().bufnr
+  buffers_to_delete[#buffers_to_delete + 1] = synchronous_second_bufnr
+  expect('second synchronous UID resolution starts its stream', #synchronous_calls, 4)
+  expect('second completed UID query handle is discarded', synchronous_calls[3].cancellations, 1)
+  expect('synchronous native handles share the exact dock', vim.fn.bufwinid(synchronous_second_bufnr), synchronous_dock_win)
+  expect('synchronous dock switch hides the previous handle', synchronous_handle:status().storage, 'disk')
   expect('synchronous Logcat stop succeeds', synchronous_handle:stop(), true)
   expect('synchronous transition cancellation reaches stream', synchronous_calls[2].cancellations, 1)
   expect('synchronous transition waits for stream exit', #synchronous_exits, 0)
   synchronous_calls[2].callback(nil, { status = 'cancelled' })
   expect('synchronous transition exits once after stream', synchronous_exits[1] and synchronous_exits[1].status, 'stopped')
+  expect('second synchronous Logcat stop succeeds', synchronous_second_handle:stop(), true)
+  expect('second synchronous cancellation reaches its stream', synchronous_calls[4].cancellations, 1)
+  synchronous_calls[4].callback(nil, { status = 'cancelled' })
+  expect('second synchronous stream exits once', synchronous_exits[2] and synchronous_exits[2].status, 'stopped')
 
   local restart_runner = fake_runner()
   local restart_exits = {}

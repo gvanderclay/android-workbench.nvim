@@ -280,13 +280,18 @@ workflow's primary result.
 `logcat/model.lua` parses and filters neutral Logcat records.
 `logcat/native.lua` owns the ADB stream, visible bounded record history, scratch
 buffer, window-local status and controls, transient shortcut help, filtering,
-and source navigation. `logcat/spool.lua` owns hidden native history. It
-serializes asynchronous reads and writes through at most two active rolling
+source navigation, and one presenter-local switching dock. Session buffers,
+histories, filters, and readers remain independent. Showing a hidden session
+replaces only the buffer in the standard bottom split that the same native
+presenter created. A manually visible session is focused in place, and a dock
+that displays an unrelated buffer loses ownership before the next show.
+`logcat/spool.lua` owns hidden native history. It serializes asynchronous reads
+and writes through at most two active rolling
 segments, bounds queued payload, creates each file as owner-only, and unlinks
 its pathname immediately. One retired segment may remain open only while its
 single in-flight write finishes. The scratch buffer contains records rather
 than scrolling UI chrome; the native presenter does not alter global mappings
-or window policy.
+or unrelated windows.
 
 The stream survives application process restarts by resolving the selected
 application UID. Replacing a root's stream requires the old presenter to accept
@@ -298,6 +303,8 @@ capture continues into private storage. Showing restores the newest records in
 order before reapplying filters. Stop, wipeout, terminal exit, and the native
 handle's private shutdown-abandon transition close that storage; the private
 transition is not part of the experimental replacement-port contract.
+The native dock is likewise private presentation policy; custom Logcat
+presenters retain complete ownership of their windows.
 
 ### Command, actions, and integrations
 
