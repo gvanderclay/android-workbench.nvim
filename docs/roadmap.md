@@ -2,13 +2,12 @@
 
 ## Current state
 
-Android Workbench is now a standalone, source-visible pre-release development
-repository. The runtime layout, bundled Gradle provider, command entry, vimdoc,
-focused contracts, clean package smoke, and initial CI definition have been
-extracted without changing the module namespace, `:Android` grammar, or state
-location.
+Android Workbench is now a standalone Neovim plugin with an initial `v0.1.0`
+release. The runtime layout, bundled Gradle provider, command entry, vimdoc,
+focused contracts, clean package smoke, and CI definition were extracted
+without changing the module namespace, `:Android` grammar, or state location.
 
-This is an MIT-licensed but unreleased plugin. The work below is ordered by user
+This is an MIT-licensed plugin. The completed work below is ordered by user
 impact and correctness rather than feature count.
 
 ## Extraction baseline
@@ -195,9 +194,9 @@ feature-count comparison.
 - [x] State Windows as not currently supported rather than promising an
   untested wrapper path.
 - [x] Document a simple `0.x` change policy and populate the changelog.
-- [ ] Rerun standalone CI and the selected manual outcome checklist from the
+- [x] Rerun standalone CI and the selected manual outcome checklist from the
   exact release commit.
-- [ ] Tag `v0.1.0` only after licensing, provenance, runtime, API, verification,
+- [x] Tag `v0.1.0` only after licensing, provenance, runtime, API, verification,
   and daily-use gates are complete.
 
 ## Deferred until demonstrated demand

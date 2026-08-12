@@ -1,12 +1,12 @@
 # Release evidence
 
-This ledger records reproducible pre-release checks. A passing development
-check does not replace the exact-release-commit rerun required by R3.4.
+This ledger records reproducible release checks. Annotated tag `v0.1.0` resolves
+to exact verified commit `0caff50af8db68c8a8fbc4bf86a06a3f18f5582f`.
 
 ## Standalone CI
 
-Commit `cea05c401ea7273f22ff000ecd2c9e75aba02cf6` passed
-[CI run 31602408983](https://github.com/gvanderclay/android-workbench.nvim/actions/runs/31602408983)
+Release commit `0caff50af8db68c8a8fbc4bf86a06a3f18f5582f` passed
+[CI run 31614010533](https://github.com/gvanderclay/android-workbench.nvim/actions/runs/31614010533)
 on 2026-08-12 in both claimed jobs:
 
 - Neovim 0.12.4 on `ubuntu-latest`
@@ -17,16 +17,18 @@ format check. The workflow and actions are SHA-pinned.
 
 ## Isolated package checks
 
-`make test` passed on 2026-08-11 with Neovim 0.12.4. Its 14 contract suites
-and two package smokes use a clean init, isolated XDG directories, no user
-configuration, no network installation, no Android SDK state, and only
-disposable project roots. `make test-format`, help-tag generation, and
-`git diff --check` also passed.
+`make test` passed on the exact release commit on 2026-08-12 with Neovim 0.12.4.
+Its 14 contract suites and two package smokes use a clean init, isolated XDG
+directories, no user configuration, no network installation, no Android SDK
+state, and only disposable project roots. `make test-format`, help-tag
+generation, `git diff --check`, and ShellCheck for both integration scripts also
+passed.
 
 ## Real Gradle and Android endpoints
 
-`make test-integration-gradle` passed on 2026-08-11 on macOS 26.5.2 arm64,
-Neovim 0.12.4, and Java 17.0.9. The tracked disposable fixture verified both:
+`make test-integration-gradle` passed on the exact release commit on 2026-08-12
+on macOS 26.5.2 arm64, Neovim 0.12.4, and Java 17.0.9. The tracked disposable
+fixture verified both:
 
 - Gradle 7.3.3 with AGP 7.1.3 and Android platform 30
 - Gradle 9.1.0 with AGP 9.0.1 and Android platform 36
@@ -40,8 +42,8 @@ service and checked against their published SHA-256 digests.
 
 ## Optional adapters
 
-`make test-integration-adapters` passed on 2026-08-11 with the exact Telescope,
-Plenary, and Overseer revisions recorded in
+`make test-integration-adapters` passed on the exact release commit on
+2026-08-12 with the exact Telescope, Plenary, and Overseer revisions recorded in
 [`tests/integration/adapters/README.md`](../tests/integration/adapters/README.md).
 The real Telescope picker returned its current item, and the real Overseer task
 streamed and completed a direct `nvim --version` invocation. Exhaustive
@@ -89,3 +91,34 @@ evidence: reused state could override a requested AVD, and separate isolated
 configs generated incompatible debug certificates. Neither required a runtime
 change. Generated projects, worktrees, build output, and owned processes were
 removed after their checks.
+
+## Exact release checklist
+
+Release commit `0caff50af8db68c8a8fbc4bf86a06a3f18f5582f` passed the selected
+R3.4 outcome checklist on 2026-08-12:
+
+- Two real Builds passed. A deliberately slow registered task accepted
+  cancellation, completed once as cancelled, cleared its root operation, and
+  succeeded on immediate retry.
+- An intentional Java missing-type failure produced the exact source location
+  in the Android-owned quickfix list without opening it. Native task output kept
+  the full compiler line, and two Builds passed after the source was restored.
+- With one AVD already online, Workbench started a second stopped AVD, ran and
+  restarted the fixture application, retained app-scoped Logcat records, and
+  stopped only the second AVD.
+- Exiting Neovim with Logcat active left no reader or Neovim process. A fresh
+  process loaded only saved selection state and completed a new independent
+  Run, Logcat, and Stop workflow.
+- Separate main and linked Git worktrees retained independent selections and
+  operations during concurrent refresh, Build, task cancellation, and restart.
+- A disposable sibling-consumer worktree advanced only the Android Workbench
+  lock to the exact release commit. Pack-ui background checking was disabled in
+  that disposable config so unrelated revisions could not drift. The consumer
+  smoke and full isolated headless startup passed, and the installed package
+  checkout matched the release commit.
+
+The test-owned AVD, processes, build output, linked worktree, consumer worktree,
+and isolated consumer data were removed. The pre-existing AVD remained online,
+and the real consumer checkout was not changed. The annotated `v0.1.0` tag was
+created and pushed only after these checks passed; its remote peeled tag resolves
+to the exact release commit above.
