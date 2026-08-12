@@ -37,7 +37,9 @@ task, SDK, or device management.
 [`plugin/android-workbench.lua`](../../plugin/android-workbench.lua) registers
 the `:Android` command. Its completion grammar is static and must not construct
 the application, inspect a project, query ADB, enumerate AVDs, prompt for trust,
-or execute Gradle.
+or execute Gradle. Registration never replaces an existing global `:Android`
+command: the incumbent remains callable and Workbench emits one warning without
+loading its command implementation.
 
 [`android_workbench/init.lua`](../../lua/android_workbench/init.lua) is the Lua
 facade. It owns setup, contextual argument normalization, the lazy singleton,

@@ -50,7 +50,16 @@ test-package:
 		XDG_STATE_HOME="$$test_tmp/state" \
 		XDG_CACHE_HOME="$$test_tmp/cache" \
 		"$(NVIM)" --headless -u "$(ROOT)/tests/minimal_init.lua" -i NONE \
-		"+luafile $(ROOT)/tests/package-smoke.lua"
+		"+luafile $(ROOT)/tests/package-smoke.lua"; \
+	env \
+		ANDROID_WORKBENCH_TEST_ROOT="$(ROOT)" \
+		NVIM_APPNAME=android-workbench-test \
+		XDG_CONFIG_HOME="$$test_tmp/collision/config" \
+		XDG_DATA_HOME="$$test_tmp/collision/data" \
+		XDG_STATE_HOME="$$test_tmp/collision/state" \
+		XDG_CACHE_HOME="$$test_tmp/collision/cache" \
+		"$(NVIM)" --headless -u "$(ROOT)/tests/collision_init.lua" -i NONE \
+		"+luafile $(ROOT)/tests/package-collision-smoke.lua"
 
 test-format:
 	stylua --check lua plugin tests

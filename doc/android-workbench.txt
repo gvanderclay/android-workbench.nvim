@@ -625,6 +625,11 @@ them, but reachability is not a support promise.
         the list does not authorize the project, run Gradle, query ADB,
         enumerate AVDs, or start another workflow.
 
+        If another plugin or the user's configuration already defined the
+        global `:Android` command before Android Workbench loads, Workbench
+        leaves that command unchanged and emits one warning. It does not
+        replace the incumbent command.
+
 :Android status
         Show the current root, discovery phase, authorization state, target
         count, selected application, variant, device, and active operation.

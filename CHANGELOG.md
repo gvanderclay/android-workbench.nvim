@@ -28,6 +28,8 @@ while the first pre-1.0 release gates remain open.
   unknown or wrongly typed runner result fields no longer cross the facade.
 - Run and Stop now revalidate custom ADB result identity and no longer expose
   undocumented adapter payloads.
+- Plugin startup now preserves an existing global `:Android` command and emits
+  one warning instead of replacing it.
 
 ### Removed
 

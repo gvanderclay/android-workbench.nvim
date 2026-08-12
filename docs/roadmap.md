@@ -135,7 +135,7 @@ Workbench already executes direct argv.
 
 ### R2.5 Bounded package patches
 
-- [ ] Register `:Android` without silently overwriting an existing command.
+- [x] Register `:Android` without silently overwriting an existing command.
 - [ ] Make health reject a non-file or non-executable Gradle wrapper using the
   same prerequisite rule as discovery.
 - [ ] Add direct Telescope adapter tests for selection, cancellation, picker
