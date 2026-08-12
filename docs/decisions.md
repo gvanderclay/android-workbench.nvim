@@ -304,6 +304,29 @@ vimdoc and tests.
   the first stable release selects a compatibility policy, or a supported DTO
   cannot express a demonstrated workflow.
 
+## AN010 — License the repository under MIT
+
+- **Status:** Accepted
+- **Decision:** License Android Workbench under the MIT License with copyright
+  held by Gage Vander Clay beginning in 2026.
+- **Requirements:** Distributions retain the copyright and permission notice.
+  Record copied, adapted, generated, or vendored material in the provenance
+  inventory before distribution and add a `NOTICE` file only when an additional
+  attribution obligation requires one.
+- **Considered:** Keeping the repository unlicensed until the first tag and
+  copying the incomplete license text from the former embedded configuration.
+- **Rationale:** The owner selected MIT. Git history records one author for the
+  extracted implementation and its standalone changes, and the provenance
+  inventory found no additional attribution notice.
+- **Tradeoffs:** MIT permits reuse without promising API stability or a tagged
+  release. Recorded history and source scans cannot prove that no unrecorded
+  source was ever consulted.
+- **Consequences:** Source recipients may use, modify, and redistribute the
+  repository under the MIT terms. Release verification remains independently
+  gated by the roadmap.
+- **Revisit when:** Ownership changes or new material introduces another
+  license or attribution obligation.
+
 ## Repository extraction status
 
 Moving the runtime into this repository does not change AN001–AN006. The module
@@ -311,6 +334,6 @@ namespace, command, state location, bundled provider placement, and consumer
 policy boundary remain intact. Extraction is a packaging and ownership change,
 not permission to widen the plugin or freeze every reachable Lua module.
 
-The repository is source-visible but not yet licensed or released. Runtime
-containment, default output, public API, compatibility, and release evidence are
-tracked separately in `roadmap.md`.
+The repository is MIT-licensed but not yet released. Runtime containment,
+default output, public API, compatibility, and release evidence are tracked
+separately in `roadmap.md`.

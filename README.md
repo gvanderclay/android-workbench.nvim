@@ -8,11 +8,8 @@ and Logcat workflows.
 
 > [!IMPORTANT]
 > This is a pre-release development repository, not a published plugin release.
-> The source is visible, but there is intentionally no license yet; repository
-> visibility does not grant permission to copy, modify, or redistribute it.
-> A licensed public release remains blocked on an explicit owner-approved
-> license and provenance review, the runtime gates in
-> [the roadmap](docs/roadmap.md), and standalone release verification.
+> A public tag remains blocked on the runtime and release-evidence gates in
+> [the roadmap](docs/roadmap.md). Pre-release APIs may still change.
 
 ## Design boundary
 
@@ -155,3 +152,16 @@ gated on the roadmap's runtime containment, public-default, licensing,
 standalone CI, real Gradle/AGP, optional-adapter, and outcome-based daily-use
 checks. Feature count, Windows support, and broad compatibility work are not
 substitutes for those gates.
+
+## 0.x change policy
+
+The documented facade and supported replacement ports are the intended `0.x`
+compatibility surface. A minor `0.x` release may still make a breaking change;
+user-visible and compatibility changes are recorded in [the changelog](CHANGELOG.md).
+Internal modules and ports labeled experimental may change without a
+compatibility bridge.
+
+## License
+
+Android Workbench is available under the [MIT License](LICENSE). The recorded
+source and attribution review is in [the provenance inventory](docs/provenance.md).

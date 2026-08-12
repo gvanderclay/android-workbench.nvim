@@ -5,8 +5,8 @@
 This repository contains Android Workbench, a focused Neovim plugin for Android
 and Gradle orchestration. It is a source-visible pre-release development
 repository, not a published plugin release. Do not tag a release, submit it to
-a plugin registry, or add a license without explicit owner approval and
-completion of the release gates in `docs/roadmap.md`.
+a plugin registry, or change the MIT license without explicit owner approval
+and completion of the applicable release gates in `docs/roadmap.md`.
 
 ## Session continuity
 
@@ -165,12 +165,10 @@ the current checkout or edit the consumer unless it is in scope.
 
 ## Release discipline
 
-The absence of `LICENSE` is intentional while ownership and provenance are
-resolved. Do not copy the incomplete license text from the dotfiles repository.
-Do not claim public support from unit tests alone. A public tag requires the
-runtime, default-output, API, licensing, clean-package/CI, real Gradle/AGP,
-optional-adapter, and daily-use outcomes listed in `docs/roadmap.md`.
-
-Repository visibility does not substitute for a license. No runtime version
-module, package schema version, release bot, LuaRocks manifest, or
+The repository uses the MIT License selected by the owner. Keep its holder/year
+notice and `docs/provenance.md` accurate when adding material. Do not claim
+public support from unit tests alone. A public tag requires the runtime,
+default-output, API, licensing, clean-package/CI, real Gradle/AGP,
+optional-adapter, and daily-use outcomes listed in `docs/roadmap.md`. No runtime
+version module, package schema version, release bot, LuaRocks manifest, or
 plugin-registry metadata is needed during pre-release development.

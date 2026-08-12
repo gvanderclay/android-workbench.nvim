@@ -8,9 +8,8 @@ focused contracts, clean package smoke, and initial CI definition have been
 extracted without changing the module namespace, `:Android` grammar, or state
 location.
 
-This is not a released or licensed plugin. Repository visibility grants no
-reuse license. The work below is ordered by user impact and correctness rather
-than feature count.
+This is an MIT-licensed but unreleased plugin. The work below is ordered by user
+impact and correctness rather than feature count.
 
 ## Extraction baseline
 
@@ -145,16 +144,15 @@ Workbench already executes direct argv.
 
 ## R3 — Release evidence
 
-These gates are required for a licensed `v0.1.0`, not for ordinary development
-in the source-visible repository.
+These gates are required for `v0.1.0`, not for ordinary pre-release development.
 
 ### R3.1 License and provenance
 
-- [ ] Have the owner select a license and add the complete holder/year notice.
-- [ ] Inventory the Lua source, tests, vimdoc, and bundled Gradle script for
+- [x] Have the owner select a license and add the complete holder/year notice.
+- [x] Inventory the Lua source, tests, vimdoc, and bundled Gradle script for
   copied or adapted material and record any attribution obligations.
-- [ ] Add `NOTICE` only if that inventory establishes a need.
-- [ ] State the selected license in the README. Do not copy the incomplete
+- [x] Add no `NOTICE`; the inventory establishes no additional attribution need.
+- [x] State the selected license in the README. Do not copy the incomplete
   license text from the former embedded configuration.
 
 ### R3.2 Reproducible package verification
