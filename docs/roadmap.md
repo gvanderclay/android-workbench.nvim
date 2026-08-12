@@ -176,13 +176,13 @@ through the real execution path.
 
 ### R3.3 Outcome-based daily use
 
-- [ ] Use the exact extracted package for routine Build, Run, application Stop,
+- [x] Use the exact extracted package for routine Build, Run, application Stop,
   Logcat, emulator start/stop, and arbitrary Gradle tasks.
-- [ ] Exercise recognized source failures and locationless failures through the
+- [x] Exercise recognized source failures and locationless failures through the
   final native/default output design.
-- [ ] Exercise cancellation and retry, Neovim restart, package update, multiple
+- [x] Exercise cancellation and retry, Neovim restart, package update, multiple
   roots, and worktree switching without state or operation leakage.
-- [ ] Resolve every remaining blocker/high issue or record an explicit accepted
+- [x] Resolve every remaining blocker/high issue or record an explicit accepted
   limitation with user impact.
 
 Completion is based on these outcomes, not an arbitrary number of days or a
