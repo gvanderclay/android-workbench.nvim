@@ -217,7 +217,7 @@ decisions, and checkpoint contracts are recorded in
   refreshed client-side package filter.
 - [x] R4.5 make session navigation discoverable in the native Logcat view
   without defining global mappings or custom-presenter UI policy.
-- [ ] R4.6 record exact same-device/different-app lifecycle, bounded storage,
+- [x] R4.6 record exact same-device/different-app lifecycle, bounded storage,
   and final process/file cleanup evidence.
 
 ## Deferred until demonstrated demand

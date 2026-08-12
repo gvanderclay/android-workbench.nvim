@@ -1,7 +1,6 @@
 # Multi-session Logcat research and plan
 
-Status: R4.1 through R4.5 are implemented and verified. R4.6 remains planned
-post-`v0.1.0` work.
+Status: R4.1 through R4.6 are implemented and verified as post-`v0.1.0` work.
 
 ## Desired outcome
 
@@ -437,9 +436,22 @@ and client-side application-filter boundary.
   one selected device; record exact app PIDs, reader PIDs and argv, session
   identities, retained marker counts, spool-path checks, and final process
   cleanup.
-- Decision gate: none. Multiple-reader device and CPU cost remains unverified
-  until this checkpoint records it.
-- Status: pending.
+- Decision gate: none.
+- Status: complete. On 2026-08-12, exact commit `fc2d533` passed the isolated
+  two-application smoke on Android 16/API 36 through `emulator-5554`. The app
+  session retained two launch markers across process PIDs 19559, 19723, and
+  19879, and adopted UID 10230 after reinstall changed it from 10228. The
+  second session retained its independent marker at PID 19671 and UID 10229.
+  Reader PIDs 79806 and 80098 survived five picker switches, process restart,
+  and reinstall without replacement; all switches reused window 1003 while
+  the three-window layout stayed unchanged. Hidden history held 26 records and
+  3,424 raw bytes through one open private spool descriptor with no pathname.
+  Exact-session stop left sibling reader 80098 live, and stop-all stopped that
+  reader with no refusal. A final two-reader exit used PIDs 80361 and 80365;
+  after five seconds each measured 0.0% CPU and 8,112 or 8,064 KiB RSS. Normal
+  `:qa!` then left zero readers, UID refresh queries, smoke Neovim processes,
+  or open spool owners. Both fixture apps were stopped and Gradle `clean`
+  removed their generated build output.
 
 ## Success conditions
 

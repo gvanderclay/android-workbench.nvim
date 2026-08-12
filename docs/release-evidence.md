@@ -92,6 +92,28 @@ configs generated incompatible debug certificates. Neither required a runtime
 change. Generated projects, worktrees, build output, and owned processes were
 removed after their checks.
 
+## Post-release multi-session Logcat
+
+Commit `fc2d53386b8c392180f887af1f20a17d15b902ad` passed the R4.6
+same-device/different-app gate on 2026-08-12 with Neovim 0.12.4, ADB 37.0.0,
+and an Android 16/API 36 `sdk_gphone64_arm64` emulator.
+
+Two application sessions retained separate launch markers through five picker
+switches in one unchanged three-window layout. Their device-wide readers kept
+the same PIDs through an application process restart and a reinstall that
+changed the selected package UID from 10228 to 10230. The hidden session kept
+26 records and 3,424 raw bytes in one unlinked private spool descriptor. One
+exact-session stop left its sibling reader live; stop-all then stopped the
+remaining reader with no refusal.
+
+Before normal editor exit, two new readers measured 0.0% CPU and 8,112 and
+8,064 KiB RSS after five seconds. `:qa!` closed both readers, their UID refresh
+queries, the smoke Neovim process, and the hidden spool owner. The fixture apps
+were then force-stopped, and Gradle `clean` removed generated build output. The
+full argv, PIDs, UIDs, marker counts, storage counters, and cleanup checks are
+also recorded in the owning
+[`docs/logcat-sessions.md`](logcat-sessions.md) checkpoint.
+
 ## Exact release checklist
 
 Release commit `0caff50af8db68c8a8fbc4bf86a06a3f18f5582f` passed the selected
