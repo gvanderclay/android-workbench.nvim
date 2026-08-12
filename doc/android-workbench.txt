@@ -120,6 +120,19 @@ quickfix sink, |vim.ui.select()|, |vim.notify()|, |vim.secure.read()|, private
 JSON state, ADB, Android Emulator, and the bundled Gradle provider are used
 when their ports are omitted.
 
+During `0.x`, the supported replacement-port contracts are `picker`, `runner`,
+`problems`, and `adb`. Their exact DTOs and calling conventions are documented
+below and covered by shared conformance fixtures. The `emulator`, `logcat`,
+`discovery`, `trust`, `notifications`, and `state` replacement ports are
+experimental: they remain explicit setup seams, but their exact custom-adapter
+DTOs may change before `1.0`.
+
+Port maturity describes custom replacement contracts, not whether a built-in
+workflow works or whether its documented constructor is intentional. Native
+defaults and the public facade retain their documented behavior. An
+experimental port change will still be recorded in the changelog, but may not
+include a compatibility bridge during `0.x`.
+
 General adapter entry points (`start`, `select`, `authorize`, `load`, `save`,
 `discover`, `emit`, and `publish`) are called as plain functions. The `adb` and
 `emulator` services and returned operation handles use method-style calls with
@@ -127,7 +140,70 @@ General adapter entry points (`start`, `select`, `authorize`, `load`, `save`,
 data. Changing an earlier result cannot change retained selection, a later
 task, or device identity. Operation and Logcat handles retain their identity.
 
-The synchronous problem-sink contract is: >lua
+Picker, runner, problem-sink, and ADB adapters have supported `0.x` contracts.
+Their named fields and calling conventions will not change without an explicit
+compatibility note during pre-release development.
+
+PICKER
+
+`picker.select(request, done)` is a plain-function call. Its request contains
+only: >lua
+
+  {
+    prompt = 'Android target',
+    items = { ... },
+    format_item = function(item) return 'display label' end,
+    current = ..., -- optional item from the same domain
+  }
+<
+`prompt` is a string, `items` is an array owned by the adapter call, and
+`format_item(item)` returns a display string. The optional `current` value
+identifies the current candidate. The adapter completes with
+`done(error, item)`, where `item` is one supplied candidate; `done(nil, nil)`
+is a quiet dismissal. Workbench revalidates the returned identity against its
+original candidates, so changing the request or returning a manufactured item
+cannot change core state. `select()` may complete before it returns or later,
+and may return a method-style cancellable handle.
+
+RUNNER
+
+`runner.start(request, done)` is a plain-function call. Workbench supplies only
+these request fields: >lua
+
+  {
+    argv = { '/canonical/project/gradlew', '--console=plain', ':app:assembleDebug' },
+    cwd = '/canonical/project',
+    env = { ANDROID_SERIAL = 'emulator-5554' }, -- optional
+    name = 'Android build :app · debug',
+    metadata = { ... },
+    on_output = function(event) end,
+  }
+<
+`argv` is a non-empty array of direct process arguments; it is never a shell
+command. `cwd` and `name` are non-empty strings. Optional `env` is a string
+map. `metadata` is an owned table, and `on_output(event)` accepts only
+`{ stream = 'stdout'|'stderr', data = string, truncated? = boolean }`.
+
+For Build and Run, metadata contains `kind` (`android-build` or
+`android-run`), canonical `root`, `target_id`, `application_id`, and optional
+`device_serial`. For an arbitrary Gradle task it contains `kind =
+'gradle_task'`, canonical `root`, `task_id`, `build_path`, `project_path`, and
+`task_name`. A runner may use these values for presentation, but must execute
+the supplied direct argv as given.
+
+The runner completes with `done(error, result)`. A terminal value
+contains `status = 'success'|'failure'|'cancelled'` and may contain non-negative
+integer `code` and `signal`; string `stdout`, `stderr`, and `error`; boolean
+`stdout_truncated`, `stderr_truncated`, and `output_truncated`; and normalized
+`problems` plus `problems_truncated`. Native adapters also return `name` and
+`metadata`; a custom adapter may omit them because Workbench restores its
+canonical request values. Workbench rejects invalid field types, normalizes
+problems, and drops unknown result fields. `start()` may complete before it
+returns or later, and may return a method-style cancellable handle.
+
+PROBLEM SINK
+
+The supported synchronous problem-sink call is: >lua
 
   problems.publish({
     root = '/canonical/project',
@@ -146,13 +222,108 @@ The synchronous problem-sink contract is: >lua
     truncated = false,
   })
 <
-It returns `true`, or `nil, error`. Items may also carry `end_line` and
-`end_column`. Empty items replace or clear only the Workbench-owned results for
-that root. Reveal and close behavior belongs to the injected sink constructor,
-not top-level Workbench setup. Sink failure produces a warning but never
-replaces the Build/Run/Gradle-task result.
+`publish(batch)` is a plain-function call and returns `true`, or `nil, error`.
+The exact batch fields are `root`, `kind`, `name`, `status`, `items`, and
+`truncated`. `root` is a canonical absolute path; `kind` is `build`, `run`, or
+`gradle_task`; `name` is a non-empty single-line string of at most 512 bytes;
+and `status` is `success` or `failure`. `items` contains at most 1,000 entries.
 
-The emulator port has these asynchronous methods: >lua
+Each item has an absolute normalized `path` of at most 8,192 bytes, a one-based
+`line`, a non-empty single-line `message` of at most 4,096 bytes, and `severity`
+of `error`, `warning`, or `info`. Optional `column`, `end_line`, and
+`end_column` are also one-based. Position values are integers no greater than
+2147483647. Workbench removes duplicate items and sets `truncated` when data
+was capped or incomplete.
+
+Empty items replace or clear only the Workbench-owned results for that root.
+Reveal and close behavior belongs to the injected sink constructor, not
+top-level Workbench setup. Sink failure produces a warning but never replaces
+the Build/Run/Gradle-task result. Cancellation and failures before an accepted
+Gradle terminal publish nothing.
+
+ADB
+
+The ADB service is a supported `0.x` method-style port with exactly five public
+operations: >lua
+
+  adb:list_devices(done)
+  adb:validate_serial(serial, done)
+  adb:resolve_launch_components(serial, application_id, done)
+  adb:launch(serial, application_id, component, done)
+  adb:stop(serial, application_id, done)
+<
+Every method completes with `done(error, value)`, may call it before returning
+or later, and may return a method-style cancellable handle. Serial values are
+non-empty strings of at most 1,024 bytes without control characters. Spaces
+are valid and must be preserved because wireless ADB serials can contain them.
+Application IDs are dotted package names of at most 512 bytes. Components are
+package/activity pairs of at most 2,048 bytes and must belong to the requested
+application ID.
+
+`list_devices()` returns an array of at most 1,024: >lua
+
+  {
+    {
+      serial = 'adb-example (2)._adb-tls-connect._tcp',
+      state = 'online',
+      raw_state = 'device', -- optional
+      label = 'Pixel 10 Pro', -- optional
+      details = '...', -- optional
+    },
+  }
+<
+`state` is `online`, `authorizing`, `bootloader`, `connecting`, `detached`,
+`host`, `offline`, `recovery`, `rescue`, `sideload`, `unauthorized`,
+`no_permissions`, or `unknown`. `validate_serial()` returns the same device DTO
+for that exact serial only when it is online; a running emulator also includes
+its stable `avd_name`.
+
+`resolve_launch_components()` returns at most 1,024 exact component DTOs: >lua
+
+  {
+    {
+      component = 'com.example.app/.MainActivity',
+      package = 'com.example.app',
+      activity = 'com.example.app.MainActivity', -- optional
+    },
+  }
+<
+The list is normalized and contains no duplicate component identities.
+`launch()` returns: >lua
+
+  {
+    serial = 'emulator-5554',
+    application_id = 'com.example.app',
+    component = 'com.example.app/.MainActivity',
+    status = 'ok',
+    activity = 'com.example.app/.MainActivity', -- optional
+    launch_state = 'COLD', -- optional
+    total_time_ms = 312, -- optional
+    wait_time_ms = 340, -- optional
+  }
+<
+The status is case-insensitive `ok`; optional times are non-negative bounded
+integers. `stop()` returns only the exact stopped identity: >lua
+
+  { serial = 'emulator-5554', application_id = 'com.example.app' }
+<
+Workbench revalidates component, launch, and stop identities. A custom
+adapter's extra launch or stop fields do not widen the public Run or Stop
+result.
+
+The native ADB implementation has additional private capabilities. Native
+Logcat needs synchronous executable resolution. When a custom ADB service is
+combined with native Logcat, it must also implement `resolve_executable()` or
+setup fails. Native emulator start additionally uses `resolve_avd_name()` and
+`boot_completed()`; native emulator stop uses `resolve_avd_name()` and
+`kill_emulator()`. Those helpers are not part of the five-method public ADB
+service. Pair a custom ADB service with custom Logcat and emulator adapters
+unless it deliberately implements the matching native-private capabilities.
+Missing emulator capabilities fail that lifecycle operation with
+`unsupported_adb_service`.
+
+The experimental emulator replacement port currently has these asynchronous
+methods: >lua
 
   emulator:list_avds(done)
   emulator:start(avd_name, done)
@@ -384,9 +555,9 @@ supports method-style `handle:show(opts)` and `handle:stop()`.
 
 The nested task terminal guarantees `status`, `name`, `metadata`, `problems`,
 and `problems_truncated`, with optional `code`, `signal`, bounded `stdout` and
-`stderr`, and matching truncation flags when the runner supplies them. Extra
-adapter-specific fields may be present but are not part of the supported
-facade contract.
+`stderr`, and matching truncation flags when the runner supplies them. Unknown
+adapter-specific runner fields are removed before this result crosses the
+facade.
 
 All mutable status, result, and error data belongs to the caller. Mutation
 cannot change cached selection, a later task, or another result. Operation and
@@ -427,11 +598,11 @@ pre-1.0 entry points because their constructors are documented in Setup:
   android_workbench.integrations.quickfix
   android_workbench.integrations.diagnostics
 
-R2.3 in the development roadmap separately classifies the exact stability of
-injected port DTOs. `app`, `session`, `root`, `device`, `execution`, `config`,
-`command`, `actions`, `notify`, `state`, `task_operation`, Gradle model/task
-helpers, and Logcat/problem models are private implementation modules. Lua can
-`require()` them, but reachability is not a support promise.
+Constructor-module intent does not promote an experimental replacement port.
+`app`, `session`, `root`, `device`, `execution`, `config`, `command`, `actions`,
+`notify`, `state`, `task_operation`, Gradle model/task helpers, and
+Logcat/problem models are private implementation modules. Lua can `require()`
+them, but reachability is not a support promise.
 
 ==============================================================================
 4. COMMANDS                                          *android-workbench-commands*

@@ -7,7 +7,7 @@ local M = {}
 ---@field current any|nil
 
 ---@class AndroidWorkbenchPicker
----@field select fun(request: AndroidWorkbenchPickerRequest, callback: fun(error: string|nil, item: any|nil)): { cancel: fun(): boolean }
+---@field select fun(request: AndroidWorkbenchPickerRequest, callback: fun(error: AndroidWorkbenchError?, item: any|nil)): AndroidWorkbenchOperationHandle?
 
 ---@return AndroidWorkbenchPicker
 function M.new()

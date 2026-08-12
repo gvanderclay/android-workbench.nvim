@@ -147,8 +147,8 @@ local function project(state, batch)
   return true
 end
 
----@param opts { sink: { publish: fun(batch: table): true|nil, table? } }
----@return { publish: fun(batch: table): true|nil, table? }
+---@param opts { sink: AndroidWorkbenchProblemSink }
+---@return AndroidWorkbenchProblemSink
 function M.new(opts)
   if type(opts) ~= 'table' then error('android_workbench.integrations.diagnostics.new: opts must be a table', 2) end
   if type(opts.sink) ~= 'table' or type(opts.sink.publish) ~= 'function' then

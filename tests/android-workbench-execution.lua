@@ -12,6 +12,8 @@ local function expect_true(name, value)
   fail(name, 'expected a truthy value')
 end
 
+local PortContracts = dofile(vim.fs.joinpath(vim.env.ANDROID_WORKBENCH_TEST_ROOT, 'tests', 'fixtures', 'port_contracts.lua'))
+
 local calls = {}
 local pending_runner
 local pending_resolve
@@ -38,13 +40,22 @@ end
 
 function adb:launch(serial, application_id, component, callback)
   calls[#calls + 1] = { kind = 'launch', serial = serial, application_id = application_id, component = component }
-  vim.schedule(function() callback(nil, { stdout = 'Starting: Intent' }) end)
+  vim.schedule(
+    function()
+      callback(nil, {
+        serial = serial,
+        application_id = application_id,
+        component = component,
+        status = 'ok',
+      })
+    end
+  )
   return { cancel = function() return true end }
 end
 
 function adb:stop(serial, application_id, callback)
   calls[#calls + 1] = { kind = 'stop', serial = serial, application_id = application_id }
-  vim.schedule(function() callback(nil, { code = 0 }) end)
+  vim.schedule(function() callback(nil, { serial = serial, application_id = application_id }) end)
   return { cancel = function() return true end }
 end
 
@@ -102,6 +113,51 @@ local ok, unexpected = xpcall(function()
   expect('accepted task observer receives canonical metadata', observed_build.result.metadata.root, '/project')
   expect('accepted task observer receives an empty problem batch on success', observed_build.result.problems, {})
   expect('accepted task observer receives problem completeness', observed_build.result.problems_truncated, false)
+  local runner_request_conforms, runner_request_err = PortContracts.check(calls[#calls].request, PortContracts.runner_request)
+  expect('supported runner request contract is exact', runner_request_err, nil)
+  expect('supported runner request contract is complete', runner_request_conforms, true)
+  local task_terminal_conforms, task_terminal_err = PortContracts.check(observed_build.result, PortContracts.task_terminal)
+  expect('normalized task terminal contract is exact', task_terminal_err, nil)
+  expect('normalized task terminal contract is complete', task_terminal_conforms, true)
+
+  local mutation_build
+  local mutation_observed
+  Execution.new({
+    runner = {
+      start = function(spec, callback)
+        spec.argv[1] = '/forged/gradlew'
+        spec.name = 'Forged task name'
+        spec.metadata.kind = 'forged'
+        spec.metadata.root = '/forged'
+        callback(nil, { status = 'success', code = 0, adapter_private = { leaked = true } })
+      end,
+    },
+    adb = adb,
+  }):build(
+    vim.tbl_extend('force', request, {
+      on_task_complete = function(kind, result) mutation_observed = { kind = kind, result = result } end,
+    }),
+    function(err, result) mutation_build = { err = err, result = result } end
+  )
+  expect('runner request mutation does not change the accepted task name', mutation_observed.result.name, 'Android build :app · debug')
+  expect('runner request mutation does not change accepted metadata', mutation_observed.result.metadata, {
+    kind = 'android-build',
+    root = '/project',
+    target_id = ':app#debug',
+    application_id = 'example.app.debug',
+    device_serial = 'emulator-5554',
+  })
+  expect('runner request mutation does not fail the workflow', mutation_build.err, nil)
+  expect('runner-private terminal fields do not enter the workflow result', mutation_build.result.task.adapter_private, nil)
+
+  local invalid_typed_terminal
+  Execution.new({
+    runner = {
+      start = function(_, callback) callback(nil, { status = 'success', code = 'zero' }) end,
+    },
+    adb = adb,
+  }):build(request, function(err) invalid_typed_terminal = err end)
+  expect('runner terminal fields use the supported types', invalid_typed_terminal.code, 'invalid_runner_result')
 
   local build_failed
   local observed_failure
@@ -488,6 +544,53 @@ local ok, unexpected = xpcall(function()
   expect('run succeeds', ran.err, nil)
   expect('run resolves exact package', calls[#calls - 1].application_id, 'example.app.debug')
   expect('run launches selected component', calls[#calls].component, 'example.app.debug/.MainActivity')
+  expect('ADB launch details do not widen the Run result', ran.result.launch, nil)
+
+  local invalid_component
+  Execution.new({
+    runner = {
+      start = function(_, callback) callback(nil, { status = 'success', code = 0 }) end,
+    },
+    adb = {
+      resolve_launch_components = function(_, _, application_id, callback)
+        callback(nil, {
+          {
+            component = application_id .. '/.MainActivity',
+            package = application_id,
+            activity = 42,
+          },
+        })
+      end,
+    },
+  }):run(request, function(err) invalid_component = err end)
+  expect('launcher component fields use the supported types', invalid_component.code, 'invalid_adb_result')
+
+  local invalid_launch_identity
+  Execution.new({
+    runner = {
+      start = function(_, callback) callback(nil, { status = 'success', code = 0 }) end,
+    },
+    adb = {
+      resolve_launch_components = function(_, _, application_id, callback)
+        callback(nil, {
+          {
+            component = application_id .. '/.MainActivity',
+            package = application_id,
+            activity = application_id .. '.MainActivity',
+          },
+        })
+      end,
+      launch = function(_, _, application_id, component, callback)
+        callback(nil, {
+          serial = 'forged-serial',
+          application_id = application_id,
+          component = component,
+          status = 'ok',
+        })
+      end,
+    },
+  }):run(request, function(err) invalid_launch_identity = err end)
+  expect('launch result retains the requested device identity', invalid_launch_identity.code, 'invalid_adb_result')
 
   local no_install
   execution:run(
@@ -505,6 +608,16 @@ local ok, unexpected = xpcall(function()
   expect('stop succeeds', stopped.err, nil)
   expect('stop uses selected serial', calls[#calls].serial, 'emulator-5554')
   expect('stop uses selected package', calls[#calls].application_id, 'example.app.debug')
+  expect('ADB stop details do not widen the Stop result', stopped.result.result, nil)
+
+  local invalid_stop_identity
+  Execution.new({
+    runner = runner,
+    adb = {
+      stop = function(_, _, application_id, callback) callback(nil, { serial = 'forged-serial', application_id = application_id }) end,
+    },
+  }):stop(request, function(err) invalid_stop_identity = err end)
+  expect('stop result retains the requested device identity', invalid_stop_identity.code, 'invalid_adb_result')
 
   local cancelled
   local callback_count = 0

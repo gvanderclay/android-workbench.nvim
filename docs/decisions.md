@@ -263,8 +263,45 @@ vimdoc and tests.
   sibling consumer's direct root-module use remains private until R2.4 supplies
   its narrow replacement query.
 - **Revisit when:** A demonstrated consumer needs another facade action or
-  result field, a port promoted in R2.3 requires a public constructor change,
-  or the first stable release sets a stricter compatibility policy.
+  result field, a supported port requires a public constructor change, or the
+  first stable release sets a stricter compatibility policy.
+
+## AN009 — Support four replacement ports during 0.x
+
+- **Status:** Accepted
+- **Decision:** Support the exact picker, runner, problem-sink, and five-method
+  ADB replacement contracts during `0.x`. Keep emulator, Logcat, discovery,
+  trust, notification, and state replacement DTOs experimental until a
+  demonstrated external consumer and a closed receiving boundary justify each
+  promotion.
+- **Requirements:** Document every supported field and calling convention, keep
+  shared conformance fixtures, pass owned values across the boundary, and
+  revalidate identity-bearing returns. Keep the public ADB service limited to
+  `list_devices`, `validate_serial`, `resolve_launch_components`, `launch`, and
+  `stop`; native emulator and Logcat helpers remain conditional private
+  capabilities.
+- **Considered:** Treating all ten injectable ports as equally supported,
+  withholding all replacement contracts until `1.0`, supporting only the three
+  demonstrated presentation/task seams, and adding native ADB helper methods to
+  the general service.
+- **Rationale:** Picker, runner, and problem presentation are active consumer
+  composition seams. ADB is also needed for a complete custom device and
+  application workflow, and its five core methods already have bounded native
+  DTOs and focused lifecycle coverage. The other ports have usable native
+  implementations but no evidence that their current replacement shapes are
+  the right compatibility promise.
+- **Tradeoffs:** Intentional constructor modules and working native defaults do
+  not imply that every matching replacement DTO is stable. Experimental ports
+  can change during `0.x` with a changelog entry but without a compatibility
+  bridge. Custom ADB services that retain native Logcat or emulator composition
+  may deliberately implement extra private capabilities.
+- **Consequences:** Supported ports have exact vimdoc, LuaCATS annotations, and
+  shared structural fixtures. Runner and ADB results are closed before they
+  reach facade workflows. The remaining six ports are still injectable and
+  tested as current behavior, but consumers assume pre-1.0 change risk.
+- **Revisit when:** A real consumer needs an experimental replacement contract,
+  the first stable release selects a compatibility policy, or a supported DTO
+  cannot express a demonstrated workflow.
 
 ## Repository extraction status
 

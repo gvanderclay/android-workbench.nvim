@@ -116,14 +116,14 @@ Workbench already executes direct argv.
 
 ### R2.3 Port maturity
 
-- [ ] Fully document picker, runner, and problem-sink DTOs and conformance first;
+- [x] Fully document picker, runner, and problem-sink DTOs and conformance first;
   they are the demonstrated external composition seams.
-- [ ] Classify remaining semantic ports as supported or experimental during
+- [x] Classify remaining semantic ports as supported or experimental during
   `0.x` instead of implying equal stability.
-- [ ] Document the five-method public ADB service and the native emulator's
+- [x] Document the five-method public ADB service and the native emulator's
   conditional private ADB capabilities. Do not widen the general ADB port just
   to expose native implementation details.
-- [ ] Add contract fixtures for each port promoted to supported status.
+- [x] Add contract fixtures for each port promoted to supported status.
 
 ### R2.4 Consumer-safe context query
 

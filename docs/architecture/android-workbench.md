@@ -66,8 +66,8 @@ The facade, health entry, and constructor modules explicitly named in vimdoc
 are intentional pre-1.0 entry points. Lua modules are not public merely because
 they can be required; `App`, `Session`, root/device services, configuration,
 command/action helpers, notification fallback, task operations, state, and
-model helpers remain internal. R2.3 separately classifies injected port DTO
-stability.
+model helpers remain internal. Constructor intent and replacement-port DTO
+maturity are separate promises.
 
 The facade owns the mutable DTO members it returns through status, synchronous
 errors, and async callbacks. It exposes only the documented error fields and
@@ -209,10 +209,13 @@ only a launcher process Workbench created and still owns. A ready or adopted
 emulator outlives its operation and Neovim.
 
 The public ADB port covers core physical-device/application workflows. The
-native emulator service uses additional private ADB capabilities. A custom ADB
-service that does not supply those native capabilities requires a paired custom
-emulator service for AVD lifecycle; this conditional composition must remain
-explicit in public documentation.
+supported method-style surface is exactly `list_devices`, `validate_serial`,
+`resolve_launch_components`, `launch`, and `stop`. The native emulator service
+uses private `resolve_avd_name`, `boot_completed`, and `kill_emulator`
+capabilities. Native Logcat conditionally uses private executable resolution.
+A custom ADB service that does not supply those native capabilities requires
+paired custom emulator or Logcat services; this conditional composition must
+remain explicit in public documentation.
 
 ### Execution and task operation
 
@@ -289,25 +292,39 @@ Telescope, Overseer, Trouble, WhichKey, or language tooling.
 One explicitly constructed adapter occupies each port. Missing ports use a
 built-in implementation; there is no provider registry or automatic detection.
 
-- **`runner`:** `start(request, done) -> optional handle`. The neutral request
-  carries direct `argv`, `cwd`, optional `env`, a display name, metadata, and an
-  output callback. Results carry terminal status and bounded neutral output.
-- **`picker`:** `select(request, done) -> optional handle`. The returned item is
-  revalidated against the supplied candidates.
-- **`discovery`:** `discover({ root }, done) -> optional handle`. Optional
-  `is_stale(snapshot)` decides cache reuse.
-- **`adb`:** Method-style `list_devices`, `validate_serial`,
-  `resolve_launch_components`, `launch`, and `stop`. A native Logcat presenter
-  additionally requires executable resolution.
-- **`emulator`:** Method-style `list_avds`, `start`, and `stop`. Start accepts an
-  AVD name and returns its exact ready device. Stop accepts AVD name plus serial
-  and returns the stopped identity.
-- **`logcat`:** `start(request) -> handle`. The handle provides method-style
-  `show` and `stop`; terminal exit is reported through the request.
-- **`trust`:** Synchronous `authorize(root) -> true` or `nil, error`.
-- **`state`:** Synchronous `load(root)` and `save(root, selection)`.
-- **`notifications`:** Fire-and-forget `emit(event)`.
-- **`problems`:** Synchronous `publish(batch) -> true` or `nil, error`.
+- **`runner` (supported during `0.x`):** Plain-function
+  `start(request, done) -> optional handle`. The closed request carries direct
+  `argv`, `cwd`, optional string-map `env`, display `name`, workflow metadata,
+  and a neutral output callback. Workbench gives the adapter an owned request,
+  retains canonical name and metadata privately, validates the terminal DTO,
+  normalizes problem items, and removes unknown result fields.
+- **`picker` (supported during `0.x`):** Plain-function
+  `select(request, done) -> optional handle`. The closed request contains
+  `prompt`, owned `items`, `format_item`, and optional `current`. Dismissal is
+  `(nil, nil)`; a returned item is revalidated against the original candidates.
+- **`discovery` (experimental during `0.x`):**
+  `discover({ root }, done) -> optional handle`. Optional `is_stale(snapshot)`
+  decides cache reuse.
+- **`adb` (supported during `0.x`):** Method-style `list_devices`,
+  `validate_serial`, `resolve_launch_components`, `launch`, and `stop` with
+  closed device, component, launch, and stop DTOs. Receiving owners revalidate
+  exact serial, package, and component identity. Native-only ADB helpers are
+  conditional composition capabilities, not additions to this public port.
+- **`emulator` (experimental during `0.x`):** Method-style `list_avds`, `start`,
+  and `stop`. Start accepts an AVD name and returns its exact ready device. Stop
+  accepts AVD name plus serial and returns the stopped identity.
+- **`logcat` (experimental during `0.x`):** `start(request) -> handle`. The
+  handle provides method-style `show` and `stop`; terminal exit is reported
+  through the request.
+- **`trust` (experimental during `0.x`):** Synchronous
+  `authorize(root) -> true` or `nil, error`.
+- **`state` (experimental during `0.x`):** Synchronous `load(root)` and
+  `save(root, selection)`.
+- **`notifications` (experimental during `0.x`):** Fire-and-forget
+  `emit(event)`.
+- **`problems` (supported during `0.x`):** Plain-function synchronous
+  `publish(batch) -> true` or `nil, error`. `problem.lua` owns the closed,
+  bounded batch and item DTO before any configured sink receives it.
 
 Except for ADB and emulator services, adapter entry points are plain functions
 without implicit `self`. Returned handles are method-like and tolerate
@@ -323,10 +340,10 @@ Ports exchange neutral owned DTOs, not `App`, `Session`, provider tasks,
 quickfix IDs, or buffer/window policy. Identity-bearing returns are revalidated
 and mutable results are copied at the boundary.
 
-The ten ports are not automatically equal promises of stability. Picker,
-runner, and problem presentation are the first documented extension surfaces.
-Other semantic ports may remain experimental during pre-1.0 development until
-their DTOs and conformance tests are complete.
+The ten ports are not equal promises of stability. Picker, runner, problem
+presentation, and ADB have closed documentation and shared contract fixtures.
+The other six ports remain experimental until demonstrated consumers and
+closed receiving boundaries justify promotion.
 
 ## Async lifecycle invariants
 
@@ -438,6 +455,10 @@ The standalone contract suites are organized by owner:
 `:Android`, setup/App laziness, no package-defined mappings or eager optional
 providers, help, health, and the bundled Gradle asset. These tests do not replace
 real Gradle/AGP and optional-provider release gates.
+
+`tests/fixtures/port_contracts.lua` defines the shared closed field sets for
+every supported replacement port. Focused owner suites apply those fixtures to
+native outputs and public composition while retaining deeper behavioral tests.
 
 Refactors add characterization before moving a responsibility. Exercise
 synchronous, delayed, duplicate, and stale callbacks; cancellation before and

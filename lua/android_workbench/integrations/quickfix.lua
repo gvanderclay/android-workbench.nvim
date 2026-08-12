@@ -4,6 +4,26 @@ local M = {}
 
 local OWNER = 'android_workbench'
 
+---@class AndroidWorkbenchProblem
+---@field path string
+---@field line integer
+---@field column? integer
+---@field end_line? integer
+---@field end_column? integer
+---@field message string
+---@field severity 'error'|'warning'|'info'
+
+---@class AndroidWorkbenchProblemBatch
+---@field root string
+---@field kind 'build'|'run'|'gradle_task'
+---@field name string
+---@field status 'success'|'failure'
+---@field items AndroidWorkbenchProblem[]
+---@field truncated boolean
+
+---@class AndroidWorkbenchProblemSink
+---@field publish fun(batch: AndroidWorkbenchProblemBatch): true|nil, AndroidWorkbenchError?
+
 local severity_types = {
   error = 'E',
   warning = 'W',
@@ -149,7 +169,7 @@ local function close_visible_owned_list(id, root)
 end
 
 ---@param opts? { open_on_failure?: boolean, close_on_success?: boolean }
----@return { publish: fun(batch: table): true|nil, table? }
+---@return AndroidWorkbenchProblemSink
 function M.new(opts)
   opts = opts or {}
   if type(opts) ~= 'table' then error('android_workbench.integrations.quickfix.new: opts must be a table', 2) end

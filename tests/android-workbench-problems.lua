@@ -21,6 +21,7 @@ local function expect_error(name, callback, pattern)
   end
 end
 
+local PortContracts = dofile(vim.fs.joinpath(vim.env.ANDROID_WORKBENCH_TEST_ROOT, 'tests', 'fixtures', 'port_contracts.lua'))
 local Problem = require 'android_workbench.problem'
 local GradleProblems = require 'android_workbench.gradle.problems'
 local Diagnostics = require 'android_workbench.integrations.diagnostics'
@@ -237,6 +238,12 @@ local ok, unexpected = xpcall(function()
       item('/tmp/Shared.java', 4, 'shared validation'),
     })
   )
+  local batch_conforms, batch_contract_err = PortContracts.check(normalized_batch, PortContracts.problem_batch)
+  expect('supported problem batch contract is exact', batch_contract_err, nil)
+  expect('supported problem batch contract is complete', batch_conforms, true)
+  local item_conforms, item_contract_err = PortContracts.check(normalized_batch.items[1], PortContracts.problem_item)
+  expect('supported problem item contract is exact', item_contract_err, nil)
+  expect('supported problem item contract is complete', item_conforms, true)
 
   local normalized_task_batch, normalized_task_batch_err = Problem.normalize_batch(batch('/project/shared', 'failure', {
     item('/tmp/Task.java', 8, 'task validation'),

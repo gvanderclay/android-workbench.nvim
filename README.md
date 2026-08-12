@@ -45,8 +45,9 @@ behind the current shape live in [the decision record](docs/decisions.md).
 
 This list describes implemented breadth, not a public stability promise. The
 intentional pre-1.0 facade and module boundary is documented in
-`:help android-workbench-api`; exact port maturity and release compatibility
-remain roadmap work.
+`:help android-workbench-api`. Supported and experimental replacement ports are
+documented in `:help android-workbench-setup`; release compatibility remains
+roadmap work.
 
 ## Requirements and current support evidence
 

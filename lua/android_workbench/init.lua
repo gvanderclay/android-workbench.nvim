@@ -117,8 +117,20 @@ local instance
 ---@field device AndroidWorkbenchDeviceIdentity
 ---@field handle AndroidWorkbenchLogcatHandle
 
+---@class AndroidWorkbenchPorts
+---@field adb? AndroidWorkbenchAdbService
+---@field picker? AndroidWorkbenchPicker
+---@field problems? AndroidWorkbenchProblemSink
+---@field runner? AndroidWorkbenchRunner
+---@field discovery? table
+---@field emulator? table
+---@field logcat? table
+---@field notifications? table
+---@field state? table
+---@field trust? table
+
 ---@class AndroidWorkbenchSetupOpts
----@field ports? table<string, table>
+---@field ports? AndroidWorkbenchPorts
 ---@field logcat? { open_on_run?: boolean }
 ---@field run? { start_stopped_avd?: boolean }
 ---@field emulator? { boot_timeout_ms?: integer, poll_interval_ms?: integer }

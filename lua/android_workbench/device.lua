@@ -1,5 +1,7 @@
 local M = {}
 
+local MAX_DEVICES = 1024
+
 local Device = {}
 Device.__index = Device
 
@@ -260,7 +262,7 @@ end
 
 local function validate_device_rows(value, root)
   local rows = sequence(value)
-  if not rows then return nil, workbench_error('invalid_devices_result', 'ADB returned an invalid device list.', root) end
+  if not rows or #rows > MAX_DEVICES then return nil, workbench_error('invalid_devices_result', 'ADB returned an invalid device list.', root) end
   local result, serials = {}, {}
   for _, row in ipairs(rows) do
     local serial = raw_string(row, 'serial')

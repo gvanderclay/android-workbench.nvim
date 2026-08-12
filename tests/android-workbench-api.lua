@@ -12,6 +12,14 @@ local function expect_true(name, value)
   fail(name, 'expected a truthy value')
 end
 
+local PortContracts = dofile(vim.fs.joinpath(vim.env.ANDROID_WORKBENCH_TEST_ROOT, 'tests', 'fixtures', 'port_contracts.lua'))
+
+local function expect_contract(name, value, contract)
+  local conforms, err = PortContracts.check(value, contract)
+  expect(name .. ' is exact', err, nil)
+  expect(name .. ' is complete', conforms, true)
+end
+
 local function action_ids(status)
   local ids = {}
   for _, action in ipairs(require('android_workbench.actions').available(status)) do
@@ -312,13 +320,18 @@ local ports = {
           callback(launch_err)
           return
         end
-        callback(nil, { status = 'ok' })
+        callback(nil, {
+          serial = serial,
+          application_id = application_id,
+          component = component,
+          status = 'ok',
+        })
       end)
       return { cancel = function() return true end }
     end,
     stop = function(_, serial, application_id, callback)
       adb_calls[#adb_calls + 1] = { kind = 'stop', serial = serial, application_id = application_id }
-      vim.schedule(function() callback(nil, {}) end)
+      vim.schedule(function() callback(nil, { serial = serial, application_id = application_id }) end)
       return { cancel = function() return true end }
     end,
   },
@@ -786,6 +799,7 @@ local ok, unexpected = xpcall(function()
   local palette_handle = android.open_actions { root = root_one, path = '/captured/android/source.kt', bufnr = 37 }
   expect_true('action palette opens configured picker', pending_picker ~= nil)
   expect('action palette prompt', pending_picker.request.prompt, 'Android')
+  expect_contract('supported picker request contract', pending_picker.request, PortContracts.picker_request)
   expect('action palette opening performs no trust check', next(trust_calls), nil)
   expect('action palette opening performs no discovery', next(discovery_calls), nil)
   expect('action palette opening performs no adb work', #adb_calls, 0)
@@ -1198,6 +1212,7 @@ local ok, unexpected = xpcall(function()
   expect_true('build completes', vim.wait(1000, function() return built ~= nil end, 10))
   expect('build succeeds', built.err, nil)
   expect('build uses selected assemble task', runner_calls[#runner_calls].argv[3], ':app:assembleDebug')
+  expect_contract('supported runner request contract', runner_calls[#runner_calls], PortContracts.runner_request)
   expect('build reauthorizes immediately before Gradle execution', trust_calls[root_one], 2)
   expect('build performs one cached metadata freshness check', stale_checks_by_root[root_one], stale_checks_before_build + 1)
   expect('successful build publishes a root-scoped clear batch', problem_batches[1], {
@@ -1208,6 +1223,7 @@ local ok, unexpected = xpcall(function()
     items = {},
     truncated = false,
   })
+  expect_contract('supported problem batch contract', problem_batches[1], PortContracts.problem_batch)
 
   local assemble_task = built.result.target.assemble_task
   built.result.target.assemble_task = ':app:callerMutated'
@@ -1226,6 +1242,7 @@ local ok, unexpected = xpcall(function()
   android.run({ root = root_one }, function(err, result) ran = { err = err, result = result } end)
   expect_true('run completes', vim.wait(1000, function() return ran ~= nil end, 10))
   expect('run succeeds', ran.err, nil)
+  expect('public Run result excludes private ADB launch details', ran.result.launch, nil)
   expect('first run remembers the sole online device', state_by_root[root_one].device.serial, 'emulator-5554')
   expect('first run remembers the emulator AVD identity', state_by_root[root_one].device.avd_name, current_avd_name)
   expect('run uses selected install task', runner_calls[#runner_calls].argv[3], ':app:installDebug')
@@ -1273,6 +1290,7 @@ local ok, unexpected = xpcall(function()
   android.stop({ root = root_one }, function(err, result) stopped = { err = err, result = result } end)
   expect_true('stop completes', vim.wait(1000, function() return stopped ~= nil end, 10))
   expect('stop succeeds', stopped.err, nil)
+  expect('public Stop result excludes private ADB stop details', stopped.result.result, nil)
   expect('stop validates remembered device', adb_calls[#adb_calls - 1].kind, 'validate')
   expect('stop preserves remembered device identity after result mutation', adb_calls[#adb_calls - 1].serial, 'emulator-5554')
   expect('stop targets exact selected package', adb_calls[#adb_calls].application_id, 'example.app.debug')

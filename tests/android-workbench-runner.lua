@@ -12,6 +12,7 @@ local function expect_true(name, value)
   fail(name, 'expected a truthy value')
 end
 
+local PortContracts = dofile(vim.fs.joinpath(vim.env.ANDROID_WORKBENCH_TEST_ROOT, 'tests', 'fixtures', 'port_contracts.lua'))
 local Runner = require 'android_workbench.runner'
 local TaskOperation = require 'android_workbench.task_operation'
 local Overseer = require 'android_workbench.integrations.overseer'
@@ -198,11 +199,17 @@ local ok, unexpected = xpcall(function()
   expect('native reports stdout truncation', completed.result.stdout_truncated, true)
   expect('native captures stderr', completed.result.stderr, 'warning')
   expect('native result keeps neutral metadata', completed.result.metadata, request.metadata)
+  local runner_result_conforms, runner_result_err = PortContracts.check(completed.result, PortContracts.runner_result)
+  expect('native runner result contract is exact', runner_result_err, nil)
+  expect('native runner result contract is complete', runner_result_conforms, true)
   expect('native emits neutral output events', output, {
     { stream = 'stdout', data = '12345' },
     { stream = 'stdout', data = '67890' },
     { stream = 'stderr', data = 'warning' },
   })
+  local output_event_conforms, output_event_err = PortContracts.check(output[1], PortContracts.runner_output)
+  expect('native runner output event contract is exact', output_event_err, nil)
+  expect('native runner output event contract is complete', output_event_conforms, true)
   expect('completed native task cannot cancel', native_handle:cancel(), false)
   exit { code = 7, signal = 0 }
   expect('native completion is exactly once', callback_count, 1)

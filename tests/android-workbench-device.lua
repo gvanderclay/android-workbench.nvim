@@ -561,6 +561,24 @@ local ok, unexpected = xpcall(function()
   end
 
   do
+    local rows = {}
+    local validated = {}
+    for index = 1, 1025 do
+      local serial = 'device-' .. index
+      rows[index] = { serial = serial, state = 'online' }
+      validated[serial] = rows[index]
+    end
+    local device = Device.new {
+      adb = new_adb(rows, validated),
+      emulator = new_emulator {},
+      picker = new_picker(function() error 'oversized ADB listing must stop before selection' end),
+    }
+    local result
+    device:select(new_session(), function(err, value) result = { err = err, value = value } end)
+    expect('oversized custom ADB listing is rejected', result.err.code, 'invalid_devices_result')
+  end
+
+  do
     local session = new_session()
     local adb = {
       list_devices = function() return 42 end,

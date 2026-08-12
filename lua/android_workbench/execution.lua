@@ -5,6 +5,10 @@ local Problem = require 'android_workbench.problem'
 
 local M = {}
 
+local MAX_COMPONENTS = 1024
+local MAX_COMPONENT_BYTES = 2048
+local MAX_LAUNCH_STATUS_BYTES = 128
+
 local function pack(...) return { n = select('#', ...), ... } end
 
 local Execution = {}
@@ -148,21 +152,44 @@ local function gradle_task_error(task, result)
   return failure('gradle_task_failed', ('Gradle task %s failed. See task output.'):format(task.id), result)
 end
 
+local function optional_integer(value) return value == nil or (type(value) == 'number' and value >= 0 and value <= 2147483647 and value % 1 == 0) end
+
 local function normalize_task_result(result, spec, collection)
-  if type(result) ~= 'table' or (result.status ~= 'success' and result.status ~= 'failure' and result.status ~= 'cancelled') then return nil end
-
-  local normalized = {}
-  for key, value in pairs(result) do
-    normalized[key] = value
+  if type(result) ~= 'table' then return nil end
+  local status = rawget(result, 'status')
+  if status ~= 'success' and status ~= 'failure' and status ~= 'cancelled' then return nil end
+  local code = rawget(result, 'code')
+  local signal = rawget(result, 'signal')
+  if not optional_integer(code) or not optional_integer(signal) then return nil end
+  for _, field in ipairs { 'stdout', 'stderr', 'error' } do
+    local value = rawget(result, field)
+    if value ~= nil and type(value) ~= 'string' then return nil end
   end
+  for _, field in ipairs { 'stdout_truncated', 'stderr_truncated', 'output_truncated' } do
+    local value = rawget(result, field)
+    if value ~= nil and type(value) ~= 'boolean' then return nil end
+  end
+  local name = rawget(result, 'name')
+  if name ~= nil and (type(name) ~= 'string' or name == '') then return nil end
+  local metadata = rawget(result, 'metadata')
+  if metadata ~= nil and type(metadata) ~= 'table' then return nil end
 
-  if result.name ~= nil and (type(result.name) ~= 'string' or result.name == '') then return nil end
-  if result.metadata ~= nil and type(result.metadata) ~= 'table' then return nil end
+  local normalized = {
+    status = status,
+    name = spec.name,
+    metadata = vim.deepcopy(spec.metadata),
+  }
+  for _, field in ipairs { 'code', 'signal', 'stdout', 'stderr', 'stdout_truncated', 'stderr_truncated', 'output_truncated', 'error' } do
+    local value = rawget(result, field)
+    if value ~= nil then normalized[field] = value end
+  end
 
   local provided = {}
   local provided_truncated = false
-  if result.problems ~= nil or result.problems_truncated ~= nil then
-    provided, provided_truncated = Problem.normalize(result.problems == nil and {} or result.problems, result.problems_truncated)
+  local result_problems = rawget(result, 'problems')
+  local result_problems_truncated = rawget(result, 'problems_truncated')
+  if result_problems ~= nil or result_problems_truncated ~= nil then
+    provided, provided_truncated = Problem.normalize(result_problems == nil and {} or result_problems, result_problems_truncated)
     if not provided then return nil end
   end
 
@@ -183,8 +210,6 @@ local function normalize_task_result(result, spec, collection)
   local problems, problems_truncated = Problem.normalize(combined, provided_truncated or collected_truncated)
   if not problems then return nil end
 
-  normalized.name = result.name or spec.name
-  normalized.metadata = spec.metadata
   normalized.problems = problems
   normalized.problems_truncated = problems_truncated
   return normalized
@@ -206,7 +231,8 @@ local function observe_task(request, kind, result)
 end
 
 local function start_task(execution, current, request, kind, spec, collection, invalid_message, on_result)
-  current:start_child(function(done) return execution.runner.start(spec, done) end, function(err, result)
+  local port_request = vim.deepcopy(spec)
+  current:start_child(function(done) return execution.runner.start(port_request, done) end, function(err, result)
     if err then
       current:finish(err)
       return
@@ -221,8 +247,59 @@ local function start_task(execution, current, request, kind, spec, collection, i
   end, kind)
 end
 
-local function valid_component(application_id, component)
-  return type(component) == 'table' and type(component.component) == 'string' and component.component ~= '' and component.package == application_id
+local function bounded_string(value, max_bytes) return type(value) == 'string' and value ~= '' and #value <= max_bytes and value:find '[%c]' == nil end
+
+local function normalize_component(application_id, value)
+  if type(value) ~= 'table' then return nil end
+  local component = rawget(value, 'component')
+  local package_name = rawget(value, 'package')
+  if not bounded_string(component, MAX_COMPONENT_BYTES) or component:find '%s' or package_name ~= application_id then return nil end
+  local component_package, component_activity = component:match '^([^/]+)/([^/]+)$'
+  if component_package ~= application_id or component_activity == nil then return nil end
+
+  local activity = rawget(value, 'activity')
+  if activity ~= nil then
+    local expected_activity = component_activity:sub(1, 1) == '.' and application_id .. component_activity or component_activity
+    if not bounded_string(activity, MAX_COMPONENT_BYTES) or activity ~= expected_activity then return nil end
+  end
+
+  local normalized = {
+    component = component,
+    package = application_id,
+  }
+  if activity ~= nil then normalized.activity = activity end
+  return normalized
+end
+
+local function normalize_components(application_id, values)
+  if type(values) ~= 'table' or not vim.islist(values) or #values > MAX_COMPONENTS then return nil end
+  local normalized = {}
+  local seen = {}
+  for index, value in ipairs(values) do
+    local component = normalize_component(application_id, value)
+    if not component or seen[component.component] then return nil end
+    normalized[index] = component
+    seen[component.component] = true
+  end
+  return normalized
+end
+
+local function valid_launch_result(value, serial, application_id, component)
+  if type(value) ~= 'table' then return nil end
+  if rawget(value, 'serial') ~= serial or rawget(value, 'application_id') ~= application_id or rawget(value, 'component') ~= component then return nil end
+  local status = rawget(value, 'status')
+  if not bounded_string(status, MAX_LAUNCH_STATUS_BYTES) or status:lower() ~= 'ok' then return nil end
+  for _, field in ipairs { 'activity', 'launch_state' } do
+    local member = rawget(value, field)
+    if member ~= nil and not bounded_string(member, MAX_COMPONENT_BYTES) then return nil end
+  end
+  if not optional_integer(rawget(value, 'total_time_ms')) or not optional_integer(rawget(value, 'wait_time_ms')) then return nil end
+
+  return true
+end
+
+local function valid_stop_result(value, serial, application_id)
+  return type(value) == 'table' and rawget(value, 'serial') == serial and rawget(value, 'application_id') == application_id
 end
 
 local function android_task_spec(kind, request, task, env, collection)
@@ -360,7 +437,8 @@ function Execution:run(request, callback)
           current:finish(resolve_err)
           return
         end
-        if type(components) ~= 'table' or not vim.islist(components) then
+        components = normalize_components(request.target.application_id, components)
+        if not components then
           current:finish(failure('invalid_adb_result', 'ADB returned an invalid launcher activity list.'))
           return
         end
@@ -369,11 +447,6 @@ function Execution:run(request, callback)
           current:finish(failure('launcher_not_found', ('Installed %s, but it has no enabled MAIN/LAUNCHER activity.'):format(request.target.application_id)))
           return
         end
-        if not valid_component(request.target.application_id, selected) then
-          current:finish(failure('invalid_adb_result', 'ADB returned an invalid launcher activity.'))
-          return
-        end
-
         current:start_child(
           function(done) return self.adb:launch(request.device.serial, request.target.application_id, selected.component, done) end,
           function(launch_err, launch_result)
@@ -381,7 +454,7 @@ function Execution:run(request, callback)
               current:finish(launch_err)
               return
             end
-            if type(launch_result) ~= 'table' then
+            if not valid_launch_result(launch_result, request.device.serial, request.target.application_id, selected.component) then
               current:finish(failure('invalid_adb_result', 'ADB returned an invalid launch result.'))
               return
             end
@@ -391,7 +464,6 @@ function Execution:run(request, callback)
               device = request.device,
               component = selected,
               task = result,
-              launch = launch_result,
             })
           end,
           'launch'
@@ -410,7 +482,7 @@ function Execution:stop(request, callback)
       current:finish(err)
       return
     end
-    if type(result) ~= 'table' then
+    if not valid_stop_result(result, request.device.serial, request.target.application_id) then
       current:finish(failure('invalid_adb_result', 'ADB returned an invalid stop result.'))
       return
     end
@@ -418,7 +490,6 @@ function Execution:stop(request, callback)
       kind = 'stop',
       target = request.target,
       device = request.device,
-      result = result,
     })
   end, 'stop')
   return current

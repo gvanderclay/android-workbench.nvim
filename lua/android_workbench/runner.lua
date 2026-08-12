@@ -6,6 +6,35 @@ local M = {}
 local DEFAULT_KILL_GRACE_MS = 1000
 local native_instances = setmetatable({}, { __mode = 'k' })
 
+---@class AndroidWorkbenchRunnerOutputEvent
+---@field stream 'stdout'|'stderr'
+---@field data string
+---@field truncated? boolean
+
+---@class AndroidWorkbenchRunnerRequest
+---@field argv string[]
+---@field cwd string
+---@field env? table<string, string>
+---@field name string
+---@field metadata table
+---@field on_output fun(event: AndroidWorkbenchRunnerOutputEvent)
+
+---@class AndroidWorkbenchRunnerResult
+---@field status 'success'|'failure'|'cancelled'
+---@field code? integer
+---@field signal? integer
+---@field stdout? string
+---@field stderr? string
+---@field stdout_truncated? boolean
+---@field stderr_truncated? boolean
+---@field output_truncated? boolean
+---@field error? string
+---@field problems? AndroidWorkbenchProblem[]
+---@field problems_truncated? boolean
+
+---@class AndroidWorkbenchRunner
+---@field start fun(request: AndroidWorkbenchRunnerRequest, callback: fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchRunnerResult?)): AndroidWorkbenchOperationHandle?
+
 local function close_timer(timer)
   if not timer then return end
   pcall(timer.stop, timer)
@@ -13,8 +42,8 @@ local function close_timer(timer)
   if not ok or not closing then pcall(timer.close, timer) end
 end
 
----@param opts? { system?: function, schedule?: fun(callback: function), defer_fn?: fun(callback: function, timeout: integer): table, max_capture_bytes?: integer, max_output_bytes?: integer, max_output_lines?: integer, height?: integer, kill_grace_ms?: integer }
----@return { start: fun(request: table, callback: function): table }
+---@param opts? { system?: function, schedule?: fun(callback: function), defer_fn?: function, max_capture_bytes?: integer, max_output_bytes?: integer, max_output_lines?: integer, height?: integer, kill_grace_ms?: integer }
+---@return AndroidWorkbenchRunner
 function M.new(opts)
   opts = opts or {}
   if type(opts) ~= 'table' then error('android_workbench.runner.new: options must be a table', 2) end

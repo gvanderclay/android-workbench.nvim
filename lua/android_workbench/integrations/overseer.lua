@@ -21,7 +21,7 @@ local function status_name(overseer, status)
 end
 
 ---@param opts? { overseer?: table, schedule?: fun(callback: function), max_capture_bytes?: integer, components?: table[] }
----@return { start: fun(request: table, callback: function): table }
+---@return AndroidWorkbenchRunner
 function M.new(opts)
   opts = opts or {}
   if opts.components ~= nil and (type(opts.components) ~= 'table' or not vim.islist(opts.components)) then

@@ -12,6 +12,14 @@ local function expect_true(name, value)
   fail(name, 'expected a truthy value')
 end
 
+local PortContracts = dofile(vim.fs.joinpath(vim.env.ANDROID_WORKBENCH_TEST_ROOT, 'tests', 'fixtures', 'port_contracts.lua'))
+
+local function expect_contract(name, value, contract)
+  local conforms, err = PortContracts.check(value, contract)
+  expect(name .. ' is exact', err, nil)
+  expect(name .. ' is complete', conforms, true)
+end
+
 local Adb = require 'android_workbench.android.adb'
 
 local ok, unexpected = xpcall(function()
@@ -51,6 +59,9 @@ local ok, unexpected = xpcall(function()
       return process
     end,
   }
+  local methods_conform, methods_err = PortContracts.check_methods(service, PortContracts.adb_methods)
+  expect('public ADB service exposes all five methods', methods_err, nil)
+  expect('public ADB service method contract is complete', methods_conform, true)
 
   local function await(start)
     local completed
@@ -86,6 +97,7 @@ R58M321 device product:e1q model:Galaxy_S24 device:e1q transport_id:3
     raw_state = 'device',
     label = 'Pixel_8_Pro',
   })
+  expect_contract('ADB device result contract', completed.value[1], PortContracts.adb_device)
   expect('unauthorized state is preserved', completed.value[2].state, 'unauthorized')
   expect('no-permissions state is normalized', completed.value[3].state, 'no_permissions')
   expect('no-permissions raw state is preserved', completed.value[3].raw_state, 'no permissions')
@@ -110,6 +122,7 @@ R58M321 device product:e1q model:Galaxy_S24 device:e1q transport_id:3
     label = 'Pixel_8_Pro',
     avd_name = 'Pixel_8_API_35',
   })
+  expect_contract('ADB validated-device result contract', completed.value, PortContracts.adb_device)
   expect('AVD name query uses exact direct argv', invocations[#invocations].argv, {
     '/fake/adb',
     '-s',
@@ -229,6 +242,7 @@ com.example.app/.MainActivity
       activity = 'com.example.app.ÉcranActivity',
     },
   })
+  expect_contract('ADB component result contract', completed.value[1], PortContracts.adb_component)
   expect('component query accepts a non-ASCII activity class', completed.value[3].activity, 'com.example.app.ÉcranActivity')
   expect('component query uses exact direct argv', invocations[#invocations].argv, {
     '/fake/adb',
@@ -274,6 +288,7 @@ Complete
   expect('launch state is parsed', completed.value.launch_state, 'COLD')
   expect('launch total time is numeric', completed.value.total_time_ms, 312)
   expect('launch wait time is numeric', completed.value.wait_time_ms, 340)
+  expect_contract('ADB launch result contract', completed.value, PortContracts.adb_launch)
   expect('launch uses direct bounded argv', invocations[#invocations].argv, {
     '/fake/adb',
     '-s',
@@ -315,6 +330,7 @@ Complete
   completed = await(function(callback) return service:stop('emulator-5554', 'com.example.app', callback) end)
   expect('exact package stop succeeds', completed.err, nil)
   expect('stop result retains identity', completed.value, { serial = 'emulator-5554', application_id = 'com.example.app' })
+  expect_contract('ADB stop result contract', completed.value, PortContracts.adb_stop)
   expect('stop uses direct bounded argv', invocations[#invocations].argv, {
     '/fake/adb',
     '-s',

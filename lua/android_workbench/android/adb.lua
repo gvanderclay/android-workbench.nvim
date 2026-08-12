@@ -11,6 +11,40 @@ local MAX_COMPONENTS = 1024
 local MAX_AVD_NAME_BYTES = 1024
 local KILL_GRACE_MS = 1000
 
+---@class AndroidWorkbenchAdbDevice
+---@field serial string
+---@field state 'online'|'authorizing'|'bootloader'|'connecting'|'detached'|'host'|'offline'|'recovery'|'rescue'|'sideload'|'unauthorized'|'no_permissions'|'unknown'
+---@field raw_state? string
+---@field label? string
+---@field details? string
+---@field avd_name? string
+
+---@class AndroidWorkbenchAdbComponent
+---@field component string
+---@field package string
+---@field activity? string
+
+---@class AndroidWorkbenchAdbLaunchResult
+---@field serial string
+---@field application_id string
+---@field component string
+---@field status string
+---@field activity? string
+---@field launch_state? string
+---@field total_time_ms? integer
+---@field wait_time_ms? integer
+
+---@class AndroidWorkbenchAdbStopResult
+---@field serial string
+---@field application_id string
+
+---@class AndroidWorkbenchAdbService
+---@field list_devices fun(self: AndroidWorkbenchAdbService, callback: fun(error: AndroidWorkbenchError?, devices: AndroidWorkbenchAdbDevice[]?)): AndroidWorkbenchOperationHandle?
+---@field validate_serial fun(self: AndroidWorkbenchAdbService, serial: string, callback: fun(error: AndroidWorkbenchError?, device: AndroidWorkbenchAdbDevice?)): AndroidWorkbenchOperationHandle?
+---@field resolve_launch_components fun(self: AndroidWorkbenchAdbService, serial: string, application_id: string, callback: fun(error: AndroidWorkbenchError?, components: AndroidWorkbenchAdbComponent[]?)): AndroidWorkbenchOperationHandle?
+---@field launch fun(self: AndroidWorkbenchAdbService, serial: string, application_id: string, component: string, callback: fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchAdbLaunchResult?)): AndroidWorkbenchOperationHandle?
+---@field stop fun(self: AndroidWorkbenchAdbService, serial: string, application_id: string, callback: fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchAdbStopResult?)): AndroidWorkbenchOperationHandle?
+
 local DEVICE_STATES = {
   authorizing = true,
   bootloader = true,
@@ -760,7 +794,7 @@ function Adb:stop(serial, application_id, callback)
 end
 
 ---@param opts? { adb?: string, resolve_adb?: function, system?: function, timeout_ms?: integer }
----@return table
+---@return AndroidWorkbenchAdbService
 function M.new(opts)
   opts = opts or {}
   if type(opts) ~= 'table' then error('android_workbench.android.adb.new: options must be a table', 2) end
