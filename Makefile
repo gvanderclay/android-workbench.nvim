@@ -20,7 +20,7 @@ CONTRACT_TESTS += android-workbench-telescope.lua
 
 .DEFAULT_GOAL := test
 
-.PHONY: test test-contract test-package test-format
+.PHONY: test test-contract test-package test-format test-integration test-integration-gradle test-integration-adapters
 test: test-contract test-package
 
 test-contract:
@@ -66,3 +66,11 @@ test-package:
 
 test-format:
 	stylua --check lua plugin tests
+
+test-integration-gradle:
+	./tests/integration/gradle/run.sh
+
+test-integration-adapters:
+	./tests/integration/adapters/run.sh
+
+test-integration: test-integration-gradle test-integration-adapters

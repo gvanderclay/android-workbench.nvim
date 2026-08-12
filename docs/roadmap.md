@@ -157,17 +157,17 @@ These gates are required for `v0.1.0`, not for ordinary pre-release development.
 
 ### R3.2 Reproducible package verification
 
-- [ ] Record a successful remote CI run on every OS/Neovim version claimed by
+- [x] Record a successful remote CI run on every OS/Neovim version claimed by
   the first support statement.
-- [ ] Keep fast package contracts isolated from user configuration, network
+- [x] Keep fast package contracts isolated from user configuration, network
   installation, Android SDK state, and arbitrary projects.
-- [ ] Add a reproducible real Gradle emitter-to-decoder fixture at the claimed
+- [x] Add a reproducible real Gradle emitter-to-decoder fixture at the claimed
   endpoints, initially the recorded Gradle 7.3.3 and current endpoint.
-- [ ] Cover composite identity, exact task execution, and a second
+- [x] Cover composite identity, exact task execution, and a second
   configuration-cache run in that fixture.
-- [ ] Run a minimal Android fixture at the exact Gradle 7.3.3/AGP 7.1.3 floor
+- [x] Run a minimal Android fixture at the exact Gradle 7.3.3/AGP 7.1.3 floor
   and one chosen current pair before advertising those pairs as supported.
-- [ ] Load pinned/claimed Telescope and Overseer revisions in a small real
+- [x] Load pinned/claimed Telescope and Overseer revisions in a small real
   adapter smoke; keep existing fakes for exhaustive lifecycle failures.
 
 Do not adopt Gradle TestKit merely because it exists. A smaller replayable
@@ -190,11 +190,11 @@ feature-count comparison.
 
 ### R3.4 First pre-1.0 release
 
-- [ ] Make the README support statement match verified OS, Neovim, Gradle, AGP,
+- [x] Make the README support statement match verified OS, Neovim, Gradle, AGP,
   and optional-adapter evidence exactly.
-- [ ] State Windows as not currently supported rather than promising an
+- [x] State Windows as not currently supported rather than promising an
   untested wrapper path.
-- [ ] Document a simple `0.x` change policy and populate the changelog.
+- [x] Document a simple `0.x` change policy and populate the changelog.
 - [ ] Rerun standalone CI and the selected manual outcome checklist from the
   exact release commit.
 - [ ] Tag `v0.1.0` only after licensing, provenance, runtime, API, verification,

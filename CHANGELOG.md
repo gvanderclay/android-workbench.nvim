@@ -7,6 +7,8 @@ while the first pre-1.0 release gates remain open.
 
 ### Added
 
+- MIT licensing and a recorded source-provenance inventory.
+- Reproducible real Gradle/AGP and pinned optional-adapter integration gates.
 - A documented pre-1.0 Lua facade covering contexts, callbacks, handles,
   action results, structured errors, ownership, and shutdown.
 - An explicit list of intentional constructor modules and private runtime

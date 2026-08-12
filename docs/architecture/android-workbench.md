@@ -472,6 +472,13 @@ The standalone contract suites are organized by owner:
 providers, help, health, and the bundled Gradle asset. These tests do not replace
 real Gradle/AGP and optional-provider release gates.
 
+`tests/integration/gradle/` is the explicit real Gradle/AGP lane. It runs the
+shipped provider and public facade from disposable floor/current Android
+projects, including configuration-cache replay, composite identity, exact task
+execution, and APK assembly. `tests/integration/adapters/` loads pinned real
+Telescope and Overseer revisions. Neither integration lane is part of the fast
+or offline `make test` target.
+
 `tests/fixtures/port_contracts.lua` defines the shared closed field sets for
 every supported replacement port. Focused owner suites apply those fixtures to
 native outputs and public composition while retaining deeper behavioral tests.

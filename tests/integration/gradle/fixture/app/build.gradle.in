@@ -1,0 +1,21 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.example.workbenchfixture'
+    compileSdk @COMPILE_SDK@
+
+    defaultConfig {
+        applicationId 'com.example.workbenchfixture'
+        minSdk 23
+        targetSdk @COMPILE_SDK@
+        versionCode 1
+        versionName '1.0'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}

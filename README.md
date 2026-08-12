@@ -48,8 +48,8 @@ roadmap work.
 
 ## Requirements and current support evidence
 
-The current development floor is Neovim 0.12.4 on macOS/Unix-like systems.
-Individual workflows additionally require:
+Verified host evidence covers Neovim 0.12.4 on macOS and Linux. Individual
+workflows additionally require:
 
 - Command, help, and health require Neovim 0.12.4.
 - Discovery, Build, Run, and Gradle tasks require an executable Unix `gradlew`,
@@ -59,12 +59,18 @@ Individual workflows additionally require:
 - AVD lifecycle requires Android Emulator and ADB on `PATH`, or an injected
   semantic emulator service.
 - Telescope selection requires Telescope only when that adapter is selected.
-- Overseer execution requires Overseer 2.x only when that adapter is selected.
+- Overseer execution requires Overseer only when that adapter is selected.
 
-Windows wrapper support and broad historical Gradle/AGP compatibility are not
-currently claimed. The recorded development floor is Gradle 7.3.3 with AGP
-7.1.3, but replayable compatibility gates are still required before publishing
-that as a release guarantee.
+The real fixture passes Gradle 7.3.3 with AGP 7.1.3 and the chosen current pair,
+Gradle 9.1.0 with AGP 9.0.1, using Java 17. Other Gradle/AGP pairs are
+unverified. The optional-adapter smoke passes Telescope
+`427b576c16792edad01a92b89721d923c19ad60f`, Plenary
+`74b06c6c75e4eeb3108ec01852001636d85a932b`, and Overseer
+`a93d9f6d6defdac4bcd6d2c8ba988650e42e0a0e`; other revisions are unverified.
+
+Windows is not currently supported because Workbench executes an executable
+Unix `gradlew` and has no tested `gradlew.bat` path. Other Unix-like hosts are
+also unverified.
 
 ## Development installation
 
@@ -144,6 +150,17 @@ asset without loading another user configuration. See
 [the architecture guide](docs/architecture/android-workbench.md) for design
 constraints and [the roadmap](docs/roadmap.md) for work that remains before a
 public tag.
+
+The explicit network/SDK integration gates stay outside `make test`:
+
+```sh
+make test-integration
+```
+
+They run the shipped provider and decoder against the recorded Gradle/AGP
+floor and current pair, then load the pinned Telescope and Overseer adapters.
+See [the release-evidence ledger](docs/release-evidence.md) for exact revisions
+and recorded results.
 
 ## Release status
 
