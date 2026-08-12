@@ -44,6 +44,9 @@ while the first pre-1.0 release gates remain open.
   duplicate or late selection callback after completion or picker wipeout.
 - Native Logcat handles created by one presenter now switch independent session
   buffers through its owned bottom split without replacing unrelated windows.
+- Native Logcat now reads device-wide output and applies a refreshed package
+  filter inside Workbench, preserving a session across package reinstalls and
+  reading the device's full bounded history by default.
 
 ### Removed
 

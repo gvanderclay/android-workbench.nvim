@@ -38,6 +38,8 @@ local function line_count(lines, expected)
   return count
 end
 
+local function wire_line(uid, line) return (line:gsub('^(%d%d%d%d%-%d%d%-%d%d%s+%d%d:%d%d:%d%d%.%d+%s+)', '%1' .. uid .. ' ', 1)) end
+
 local function buffer_lines(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then return {} end
   return vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -264,6 +266,15 @@ local ok, unexpected = xpcall(function()
   expect('threadtime priority is normalized', { parsed.priority, parsed.level, parsed.rank }, { 'W', 'warn', 4 })
   expect('threadtime tag and message are parsed', { parsed.tag, parsed.message }, { 'ExampleTag', 'warning payload' })
 
+  local uid_parsed = Model.parse_line '2026-08-10 12:34:56.789 10101 123 456 W ExampleTag: warning payload'
+  expect('threadtime UID metadata is parsed without changing display text', {
+    uid_parsed.uid,
+    uid_parsed.raw,
+  }, {
+    10101,
+    '2026-08-10 12:34:56.789 123 456 W ExampleTag: warning payload',
+  })
+
   local continuation = Model.parse_line('    at com.example.Crash.fail(Crash.kt:2)', parsed)
   expect('continuation inherits record identity', {
     continuation.continuation,
@@ -375,26 +386,24 @@ local ok, unexpected = xpcall(function()
   expect('exact package UID wins over a prefix match', handle:status().uid, 10101)
   expect_true('window bar updates the resolved UID', vim.wo[log_win].winbar:find('uid 10101', 1, true) ~= nil)
   expect('UID resolution starts exactly one stream', #runner.calls, 2)
-  expect('Logcat stream uses exact UID-scoped argv', runner.calls[2].request.argv, {
+  expect('Logcat stream reads the device for client-side package filtering', runner.calls[2].request.argv, {
     '/fake/adb',
     '-s',
     device_serial,
     'logcat',
-    '--uid=10101',
     '-b',
     'main,system,crash',
     '-v',
-    'threadtime,year,printable',
+    'threadtime,year,uid,printable',
     '-T',
     '25',
     '*:V',
   })
-  expect('stream metadata retains exact app identity', runner.calls[2].request.metadata, {
+  expect('stream metadata retains stable app identity', runner.calls[2].request.metadata, {
     kind = 'android-logcat',
     root = temporary_root,
     application_id = 'com.example.app',
     device_serial = device_serial,
-    uid = 10101,
   })
 
   local debug_line = '2026-08-10 12:00:00.001 101 201 D Startup: boot sequence'
@@ -402,12 +411,21 @@ local ok, unexpected = xpcall(function()
   local warn_line = '2026-08-10 12:00:00.003 101 203 W CrashTag: warning needle'
   local error_line = '2026-08-10 12:00:00.004 101 204 E CrashTag: IllegalStateException'
   local frame_line = '    at com.example.Crash.fail(Crash.kt:2)'
+  local wire_debug_line = wire_line(10101, debug_line)
+  local wire_info_line = wire_line(10101, info_line)
+  local wire_warn_line = wire_line(10101, warn_line)
+  local wire_error_line = wire_line(10101, error_line)
   local output = runner.calls[2].request.on_output
-  output { stream = 'stdout', data = debug_line:sub(1, 27) }
-  output { stream = 'stdout', data = debug_line:sub(28) .. '\r' }
-  output { stream = 'stdout', data = '\n' .. info_line .. '\r\n' .. warn_line .. '\n' .. error_line:sub(1, 31) }
-  output { stream = 'stdout', data = error_line:sub(32) .. '\r\n' .. frame_line .. '\r\n' }
+  output { stream = 'stdout', data = wire_debug_line:sub(1, 27) }
+  output { stream = 'stdout', data = wire_debug_line:sub(28) .. '\r' }
+  output { stream = 'stdout', data = '\n' .. wire_info_line .. '\r\n' .. wire_warn_line .. '\n' .. wire_error_line:sub(1, 31) }
+  output { stream = 'stdout', data = wire_error_line:sub(32) .. '\r\n' .. frame_line .. '\r\n' }
   output { stream = 'stderr', data = 'ignored stderr\n' }
+
+  local unrelated_line = '2026-08-10 12:00:00.005 999 998 I OtherApp: hidden'
+  output { stream = 'stdout', data = wire_line(20202, unrelated_line) .. '\n' }
+  local named_uid_line = '2026-08-10 12:00:00.006 997 996 I SystemApp: hidden'
+  output { stream = 'stdout', data = wire_line('system', named_uid_line) .. '\n' }
 
   expect('split chunks and CRLF produce one record per logical line', handle:status().records, 5)
   local lines = buffer_lines(bufnr)
@@ -422,6 +440,8 @@ local ok, unexpected = xpcall(function()
   } do
     expect_true(name, contains_line(lines, line))
   end
+  expect_false('client-side package filtering excludes another UID', contains_line(lines, unrelated_line))
+  expect_false('client-side package filtering excludes a named Android UID', contains_line(lines, named_uid_line))
 
   local frame_row
   for row, line in ipairs(lines) do
@@ -472,7 +492,7 @@ local ok, unexpected = xpcall(function()
   expect('pause mapping updates state', handle:status().paused, true)
   expect_true('window bar makes paused state visible', vim.wo[log_win].winbar:find('PAUSED', 1, true) ~= nil)
   local paused_line = '2026-08-10 12:00:00.005 101 205 I Worker: arrived while paused'
-  output { stream = 'stdout', data = paused_line .. '\n' }
+  output { stream = 'stdout', data = wire_line(10101, paused_line) .. '\n' }
   expect('paused stream still captures records', handle:status().records, 6)
   expect_false('paused stream does not mutate visible records', contains_line(buffer_lines(bufnr), paused_line))
   press(bufnr, 'p')
@@ -490,10 +510,10 @@ local ok, unexpected = xpcall(function()
   press(bufnr, 'c')
   expect('clear mapping removes history', handle:status().records, 0)
   local retained_after_gap = '2026-08-10 12:00:59.002 101 299 I Gap: retained after truncation'
-  output { stream = 'stdout', data = '2026-08-10 12:00:59.001 101 299 I Gap: stale partial' }
+  output { stream = 'stdout', data = wire_line(10101, '2026-08-10 12:00:59.001 101 299 I Gap: stale partial') }
   output {
     stream = 'stdout',
-    data = 'discarded suffix\n' .. retained_after_gap .. '\n',
+    data = 'discarded suffix\n' .. wire_line(10101, retained_after_gap) .. '\n',
     truncated = true,
   }
   expect('truncated output discards cross-gap partial state', handle:status().records, 1)
@@ -505,7 +525,7 @@ local ok, unexpected = xpcall(function()
   expect('split truncated prefix produces no record', handle:status().records, 0)
   press(bufnr, 'c')
   local split_retained = '2026-08-10 12:00:00.400 101 301 E Gap: split-retained'
-  output { stream = 'stdout', data = ' suffix\n' .. split_retained .. '\n' }
+  output { stream = 'stdout', data = ' suffix\n' .. wire_line(10101, split_retained) .. '\n' }
   expect('split truncated prefix is discarded through its next newline', handle:status().records, 1)
   expect_true('split gap retains the next complete record', contains_line(buffer_lines(bufnr), split_retained))
   expect_false('split gap never renders its discarded suffix', contains_line(buffer_lines(bufnr), 'discarded post-gap prefix suffix'))
@@ -513,7 +533,7 @@ local ok, unexpected = xpcall(function()
   for index = 1, 10 do
     output {
       stream = 'stdout',
-      data = ('2026-08-10 12:01:00.%03d 101 301 I Bounded: record-%02d\n'):format(index, index),
+      data = wire_line(10101, ('2026-08-10 12:01:00.%03d 101 301 I Bounded: record-%02d'):format(index, index)) .. '\n',
     }
   end
   expect('history stays within configured bound', handle:status().records, 8)
@@ -535,10 +555,10 @@ local ok, unexpected = xpcall(function()
   local hidden_lines = {}
   for index = 1, 6 do
     hidden_lines[#hidden_lines + 1] = ('2026-08-10 12:02:00.%03d 101 301 I Hidden: record-%02d'):format(index, index)
-    output { stream = 'stdout', data = hidden_lines[#hidden_lines] .. '\n' }
+    output { stream = 'stdout', data = wire_line(10101, hidden_lines[#hidden_lines]) .. '\n' }
   end
   local hidden_other = '2026-08-10 12:02:00.007 101 301 I Other: filtered'
-  output { stream = 'stdout', data = hidden_other .. '\n' }
+  output { stream = 'stdout', data = wire_line(10101, hidden_other) .. '\n' }
   hidden_status = handle:status()
   expect('hidden output does not recreate parsed history', hidden_status.in_memory_records, 0)
   expect_true('hidden history remains within its record bound', type(hidden_status.records) == 'number' and hidden_status.records <= 8)
@@ -570,7 +590,7 @@ local ok, unexpected = xpcall(function()
   vim.api.nvim_win_close(log_win, false)
   output { stream = 'stdout', data = 'hidden stale partial' }
   local transition_line = '2026-08-10 12:02:00.008 101 301 I Hidden: transition'
-  output { stream = 'stdout', data = 'discarded suffix\n' .. transition_line .. '\n', truncated = true }
+  output { stream = 'stdout', data = 'discarded suffix\n' .. wire_line(10101, transition_line) .. '\n', truncated = true }
   expect('a duplicate show joins the active restoration', handle:show { focus = false }, true)
   expect_true('rapid hide and show completes once', vim.wait(1000, function() return handle:status().storage == 'memory' end, 10))
   log_win = vim.fn.bufwinid(bufnr)
@@ -592,12 +612,52 @@ local ok, unexpected = xpcall(function()
     press(bufnr, '?')
     help_win_before_stop = vim.api.nvim_get_current_win()
   end
+  local refresh_timer = timers[#timers]
+  expect('running Logcat schedules package identity refresh', refresh_timer and refresh_timer.timeout_ms, 1000)
+  if refresh_timer and refresh_timer.timeout_ms == 1000 then
+    refresh_timer.callback()
+    local refresh_call = runner.calls[3]
+    expect('package identity refresh runs beside the retained reader', refresh_call and refresh_call.request.argv, runner.calls[1].request.argv)
+    if refresh_call then
+      for index = 1, 10 do
+        output {
+          stream = 'stdout',
+          data = wire_line(20202, ('2026-08-10 12:39:00.%03d 801 802 I OtherApp: pending-%02d'):format(index, index)) .. '\n',
+        }
+      end
+      expect('unclassified device records remain count-bounded', handle:status().pending_records, 8)
+      output {
+        stream = 'stdout',
+        data = '2026-08-10 12:40:00.001 10102 901 902 I Reinstall: package-stable\n',
+      }
+      refresh_call.callback(nil, { status = 'success', stdout = 'package:com.example.app uid:10102\n' })
+      expect('retained reader adopts the package reinstall UID', handle:status().uid, 10102)
+      expect('identity refresh releases unclassified device records', handle:status().pending_records, 0)
+      expect_true(
+        'retained reader recovers package records that arrived before reinstall mapping',
+        contains_line(buffer_lines(bufnr), '2026-08-10 12:40:00.001 901 902 I Reinstall: package-stable')
+      )
+    end
+  end
+  local next_refresh_timer = timers[#timers]
+  expect('successful identity refresh schedules its successor', next_refresh_timer and next_refresh_timer.timeout_ms, 1000)
+  local active_refresh
+  if next_refresh_timer and next_refresh_timer.timeout_ms == 1000 then
+    next_refresh_timer.callback()
+    active_refresh = runner.calls[4]
+  end
+  local unrelated_partial = '2026-08-10 12:40:00.002 801 802 I OtherApp: unterminated'
+  output { stream = 'stdout', data = wire_line(20202, unrelated_partial) }
   expect('first stop request succeeds', handle:stop(), true)
   if help_win_before_stop then expect_false('stopping Logcat closes shortcut help', vim.api.nvim_win_is_valid(help_win_before_stop)) end
   expect('duplicate stop request is ignored', handle:stop(), false)
   expect('stop cancels the stream once', runner.calls[2].cancellations, 1)
+  expect('stop cancels an active package identity refresh', active_refresh and active_refresh.cancellations, 1)
   runner.calls[2].callback(nil, { status = 'cancelled' })
   expect('cancelled stream reports a normal stop', exits[1] and exits[1].status, 'stopped')
+  expect_false('stream exit cannot retain another package partial record', contains_line(buffer_lines(bufnr), unrelated_partial))
+  if active_refresh then active_refresh.callback(nil, { status = 'success', stdout = 'package:com.example.app uid:10103\n' }) end
+  expect('late package identity refresh cannot mutate a stopped session', handle:status().uid, 10102)
   expect('stream exit callback runs exactly once', #exits, 1)
   runner.calls[2].callback({ code = 'late_failure' }, { status = 'failure' })
   output { stream = 'stdout', data = 'late output\n' }
@@ -633,7 +693,7 @@ local ok, unexpected = xpcall(function()
   local first_output = dock_runner.calls[2].request.on_output
   local first_line = '2026-08-10 12:30:00.001 101 301 I First: visible'
   local first_hidden_line = '2026-08-10 12:30:00.002 101 301 I First: hidden'
-  first_output { stream = 'stdout', data = first_line .. '\n' }
+  first_output { stream = 'stdout', data = wire_line(30401, first_line) .. '\n' }
   input_value = 'first'
   press(first_bufnr, 't')
 
@@ -654,8 +714,8 @@ local ok, unexpected = xpcall(function()
   local second_output = dock_runner.calls[4].request.on_output
   local second_line = '2026-08-10 12:31:00.001 101 301 I Second: visible'
   local second_frame = '    at com.example.Crash.fail(Crash.kt:2)'
-  first_output { stream = 'stdout', data = first_hidden_line .. '\n' }
-  second_output { stream = 'stdout', data = second_line .. '\n' .. second_frame .. '\n' }
+  first_output { stream = 'stdout', data = wire_line(30401, first_hidden_line) .. '\n' }
+  second_output { stream = 'stdout', data = wire_line(30402, second_line) .. '\n' .. second_frame .. '\n' }
   expect_true('current dock shows only the selected session', contains_line(buffer_lines(second_bufnr), second_line))
   expect_false('current dock never mixes sibling history', contains_line(buffer_lines(second_bufnr), first_hidden_line))
 
@@ -720,11 +780,12 @@ local ok, unexpected = xpcall(function()
   local byte_bufnr = byte_handle:status().bufnr
   buffers_to_delete[#buffers_to_delete + 1] = byte_bufnr
   byte_runner.calls[1].callback(nil, { status = 'success', stdout = 'package:com.example.app uid:30301\n' })
+  expect_false('default native capture reads the bounded device buffers without a line cutoff', vim.tbl_contains(byte_runner.calls[2].request.argv, '-T'))
   local byte_output = byte_runner.calls[2].request.on_output
   local byte_line_one = '2026-08-10 12:10:00.001 101 301 I Byte: one'
   local byte_line_two = '2026-08-10 12:10:00.002 101 301 I Byte: two'
   local byte_line_three = '2026-08-10 12:10:00.003 101 301 I Byte: three'
-  byte_output { stream = 'stdout', data = string.rep('x', 65) .. '\n' .. byte_line_one .. '\n' }
+  byte_output { stream = 'stdout', data = string.rep('x', 65) .. '\n' .. wire_line(30301, byte_line_one) .. '\n' }
   expect('oversized complete line is discarded', byte_handle:status().records, 1)
   expect_true('stream recovers after an oversized complete line', contains_line(buffer_lines(byte_bufnr), byte_line_one))
   expect_false('oversized complete line is never retained', contains_line(buffer_lines(byte_bufnr), string.rep('x', 65)))
@@ -732,12 +793,12 @@ local ok, unexpected = xpcall(function()
   byte_output { stream = 'stdout', data = string.rep('y', 40) }
   byte_output { stream = 'stdout', data = string.rep('y', 25) }
   expect('oversized split line is not retained before its newline', byte_handle:status().records, 1)
-  byte_output { stream = 'stdout', data = 'discarded suffix\n' .. byte_line_two .. '\n' }
+  byte_output { stream = 'stdout', data = 'discarded suffix\n' .. wire_line(30301, byte_line_two) .. '\n' }
   expect('oversized split line is discarded through its newline', byte_handle:status().records, 2)
   expect_true('stream recovers after an oversized split line', contains_line(buffer_lines(byte_bufnr), byte_line_two))
   expect_false('oversized split line cannot manufacture a partial record', contains_line(buffer_lines(byte_bufnr), string.rep('y', 65) .. 'discarded suffix'))
 
-  byte_output { stream = 'stdout', data = byte_line_three .. '\n' }
+  byte_output { stream = 'stdout', data = wire_line(30301, byte_line_three) .. '\n' }
   expect('retained byte bound evicts the oldest complete record', byte_handle:status().records, 2)
   expect_false('retained byte bound removes the oldest line', contains_line(buffer_lines(byte_bufnr), byte_line_one))
   expect_true('retained byte bound keeps the newer line', contains_line(buffer_lines(byte_bufnr), byte_line_two))
@@ -745,7 +806,7 @@ local ok, unexpected = xpcall(function()
 
   press(byte_bufnr, 'c')
   byte_output { stream = 'stdout', data = string.rep('q', 65) .. '\r' }
-  byte_output { stream = 'stdout', data = '\n' .. byte_line_one .. '\n' }
+  byte_output { stream = 'stdout', data = '\n' .. wire_line(30301, byte_line_one) .. '\n' }
   expect('split CRLF after an oversized line does not create an empty record', byte_handle:status().records, 1)
   expect_true('split CRLF recovery retains the next record', contains_line(buffer_lines(byte_bufnr), byte_line_one))
 
@@ -770,7 +831,7 @@ local ok, unexpected = xpcall(function()
   cleanup_runner.calls[1].callback(nil, { status = 'success', stdout = 'package:com.example.app uid:30302\n' })
   local cleanup_output = cleanup_runner.calls[2].request.on_output
   local cleanup_line = '2026-08-10 12:20:00.001 101 301 I Cleanup: retained'
-  cleanup_output { stream = 'stdout', data = cleanup_line .. '\n' }
+  cleanup_output { stream = 'stdout', data = wire_line(30302, cleanup_line) .. '\n' }
   vim.api.nvim_win_close(vim.fn.bufwinid(cleanup_bufnr), false)
   expect_true(
     'hidden cleanup history reaches private storage',
@@ -804,7 +865,7 @@ local ok, unexpected = xpcall(function()
   local wipe_bufnr = wipe_handle:status().bufnr
   wipe_runner.calls[1].callback(nil, { status = 'success', stdout = 'package:com.example.app uid:30303\n' })
   local wipe_output = wipe_runner.calls[2].request.on_output
-  wipe_output { stream = 'stdout', data = '2026-08-10 12:21:00.001 101 301 I Wipe: retained\n' }
+  wipe_output { stream = 'stdout', data = wire_line(30303, '2026-08-10 12:21:00.001 101 301 I Wipe: retained') .. '\n' }
   vim.api.nvim_win_close(vim.fn.bufwinid(wipe_bufnr), false)
   expect_true('wipeout fixture reaches private storage', vim.wait(1000, function() return wipe_handle:status().storage == 'disk' end, 10))
   vim.api.nvim_buf_delete(wipe_bufnr, { force = true })
@@ -863,6 +924,33 @@ local ok, unexpected = xpcall(function()
   expect('second synchronous cancellation reaches its stream', synchronous_calls[4].cancellations, 1)
   synchronous_calls[4].callback(nil, { status = 'cancelled' })
   expect('second synchronous stream exits once', synchronous_exits[2] and synchronous_exits[2].status, 'stopped')
+
+  local refusing_runner = fake_runner()
+  local refusing_exits = {}
+  local refusing_handle = Native.new({
+    runner = refusing_runner.adapter,
+    schedule = immediate,
+    defer_fn = defer,
+  }).start(request(function(result) refusing_exits[#refusing_exits + 1] = result end))
+  buffers_to_delete[#buffers_to_delete + 1] = refusing_handle:status().bufnr
+  refusing_runner.calls[1].callback(nil, { status = 'success', stdout = 'package:com.example.app uid:20204\n' })
+  local refused_cancellations = 0
+  refusing_runner.calls[2].handle.cancel = function()
+    refused_cancellations = refused_cancellations + 1
+    return false
+  end
+  local stopped_before_refusal = timers[#timers]
+  expect('stream cancellation refusal is preserved', refusing_handle:stop(), false)
+  expect('refused stream returns to running', refusing_handle:status().phase, 'running')
+  expect('refused stream cancellation runs once', refused_cancellations, 1)
+  expect_false('refused stop leaves package identity refresh running', stopped_before_refusal.closing)
+  refusing_runner.calls[2].handle.cancel = function()
+    refused_cancellations = refused_cancellations + 1
+    return true
+  end
+  expect('refused stream can be stopped later', refusing_handle:stop(), true)
+  refusing_runner.calls[2].callback(nil, { status = 'cancelled' })
+  expect('refused stream eventually exits once', refusing_exits[1] and refusing_exits[1].status, 'stopped')
 
   local restart_runner = fake_runner()
   local restart_exits = {}

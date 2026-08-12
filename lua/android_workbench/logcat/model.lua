@@ -38,7 +38,28 @@ end
 ---@param previous? table
 ---@return table
 function M.parse_line(line, previous)
-  local date, time, pid, tid, priority, tag, message =
+  local date, time, uid, remainder = line:match '^(%d%d%d%d%-%d%d%-%d%d)%s+(%d%d:%d%d:%d%d%.%d+)%s+(%S+)%s+(.+)$'
+  local pid, tid, priority, tag, message
+  if remainder then
+    pid, tid, priority, tag, message = remainder:match '^(%d+)%s+(%d+)%s+([VDIWEFA])%s+([^:]-)%s*:%s?(.*)$'
+  end
+  if priority then
+    local level = NAMES_BY_PRIORITY[priority]
+    return {
+      raw = date .. ' ' .. time .. ' ' .. remainder,
+      timestamp = date .. ' ' .. time,
+      uid = tonumber(uid),
+      pid = tonumber(pid),
+      tid = tonumber(tid),
+      priority = priority,
+      level = level,
+      rank = LEVELS[level].rank,
+      tag = vim.trim(tag),
+      message = message,
+    }
+  end
+
+  date, time, pid, tid, priority, tag, message =
     line:match '^(%d%d%d%d%-%d%d%-%d%d)%s+(%d%d:%d%d:%d%d%.%d+)%s+(%d+)%s+(%d+)%s+([VDIWEFA])%s+([^:]-)%s*:%s?(.*)$'
   if priority then
     local level = NAMES_BY_PRIORITY[priority]
@@ -60,6 +81,8 @@ function M.parse_line(line, previous)
     return {
       raw = line,
       timestamp = previous.timestamp,
+      uid = previous.uid,
+      application_id = previous.application_id,
       pid = previous.pid,
       tid = previous.tid,
       priority = previous.priority,

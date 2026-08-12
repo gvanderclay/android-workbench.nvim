@@ -330,7 +330,7 @@ vimdoc and tests.
 ## AN011 — Spool hidden native Logcat history privately
 
 - **Status:** Accepted
-- **Decision:** Keep each native UID-scoped Logcat reader active when its last
+- **Decision:** Keep each native Logcat reader active when its last
   window is hidden, but move its retained history out of parsed Lua records and
   buffer lines into bounded private temporary storage. Restore the newest
   retained history when the handle is shown again.
@@ -347,7 +347,7 @@ vimdoc and tests.
 - **Rationale:** A hermetic measurement found that four saturated current
   sessions added 47.34 MiB of RSS and eight added 99.80 MiB. Hidden spooling
   follows Android Studio's memory-saver lifecycle without changing Workbench's
-  app-scoped capture model or making hidden state durable.
+  app-scoped presentation or making hidden state durable.
 - **Tradeoffs:** Hiding and showing now perform local filesystem I/O. Rolling
   segment eviction can retain fewer records than the nominal per-session cap,
   and one retired descriptor can live until its already-started write returns.
@@ -409,8 +409,8 @@ vimdoc and tests.
   identity, one shared device reader, and requiring replacement presenters to
   share the native dock.
 - **Rationale:** Application/device identity matches the accepted Android
-  Studio-like workflow while preserving Workbench's UID-scoped capture. App
-  owns lifecycle and identity; presenters remain free to own their UI.
+  Studio-like workflow independently of the native presenter's capture method.
+  App owns lifecycle and identity; presenters remain free to own their UI.
 - **Tradeoffs:** Each live session owns an ADB reader and independently bounded
   history. The aggregate status cannot identify the current session; selection
   and detailed session state remain separate R4.4 contracts.
@@ -453,6 +453,44 @@ vimdoc and tests.
 - **Revisit when:** Pending-start cleanup needs an aggregate public result, a
   real consumer needs richer session metadata, or R4.5 shows that another
   presentation-neutral action is required.
+
+## AN015 — Filter native Logcat by stable package identity
+
+- **Status:** Accepted
+- **Decision:** Give each native session a device-wide Logcat reader and filter
+  its records inside Workbench for the session's exact application ID. Request
+  UID metadata in the Logcat format, resolve the package UID before capture,
+  and refresh that mapping while the reader remains live. Treat UID as
+  temporary device metadata rather than session identity.
+- **Requirements:** A UID change must not restart the reader, replace the
+  handle, clear history, or reset filters. Records received just before a
+  refreshed mapping are classified from a separately count- and byte-bounded
+  pending queue. Mapping failure fails closed, and late refresh callbacks after
+  stop or shutdown cannot mutate state or reschedule work. Default capture
+  reads the device's finite Logcat buffers without a `-T` cutoff; configured
+  positive `initial_lines` remains an explicit cutoff.
+- **Considered:** Retaining `adb logcat --uid` and restarting it after
+  Workbench-owned Run, filtering by one PID, grepping package text, deploying
+  Android Studio's native process-tracker agent, and sharing one device reader
+  across sessions.
+- **Rationale:** A live device test proved that reinstalling the same package
+  changed its UID while the retained reader stayed bound to the old UID. It
+  also proved that `-T 200` selected device-wide records before UID filtering,
+  yielding no app history even though an uncut UID query returned 28 records.
+  Studio's device-wide capture plus client-side application filtering avoids
+  both identity failures without changing Workbench's session model.
+- **Tradeoffs:** The CLI implementation runs one short bounded package query
+  per live session each second instead of using Studio's JDWP and native-agent
+  process monitor. A deliberately shared Android UID can still include sibling
+  packages. Every session still owns an independent ADB reader and bounded
+  history.
+- **Consequences:** A package reinstall updates the mapping in place and
+  preserves the session's reader, buffer, history, filters, and dock identity.
+  Native capture now consumes device-wide transport volume, while custom
+  Logcat presenters remain unaffected.
+- **Revisit when:** Measured query or device-wide reader cost justifies a
+  shared process monitor, exact shared-UID separation becomes necessary, or a
+  general package/process query language is accepted.
 
 ## Repository extraction status
 

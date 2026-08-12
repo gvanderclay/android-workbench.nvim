@@ -391,11 +391,15 @@ The port has one `start(request)` method and returns a handle with `show()` and
 plus an optional lazy `resolve_adb()` function. Custom presenters can ignore
 the resolver and do not receive native-buffer details.
 
-The native defaults retain at most 10,000 records and 4 MiB of raw record text.
-A logical line is limited to 64 KiB. A longer line is discarded through its
-next newline before parsing resumes, including when it spans output chunks.
-The byte limits measure Lua string bytes. Oldest records are evicted first when
-either history limit is exceeded.
+The native defaults retain at most 10,000 application records and 4 MiB of raw
+application record text. Device records waiting for the next package-identity
+refresh are separately bounded by the same count and byte limits. A logical
+line is limited to 64 KiB. A longer line is discarded through its next newline
+before parsing resumes, including when it spans output chunks. The byte limits
+measure Lua string bytes. Oldest records are evicted first when either history
+limit is exceeded. By default the reader consumes the device's current bounded
+Logcat buffers before following live output. A positive `initial_lines` option
+limits that initial device-wide read with `adb logcat -T`.
 
 The default Gradle provider can be constructed with a project-specific
 configuration-cache policy or timeout: >lua
@@ -783,9 +787,11 @@ them, but reachability is not a support promise.
         Sessions are identified by exact application ID and device serial.
         Starting another identity keeps existing sessions live. Revealing an
         existing identity makes it current without restarting its reader.
-        The default presenter resolves the installed package UID, so the stream
-        includes application subprocesses and survives application PID
-        restarts. A shared Android UID can also include sibling packages.
+        The default presenter reads the device-wide stream and filters records
+        inside Workbench for the exact application ID. It resolves and refreshes
+        the package UID as temporary device metadata, so the same reader,
+        history, and filters survive application PID restarts and package
+        reinstalls. A shared Android UID can also include sibling packages.
 
 :Android logcat sessions
         Open a root-local picker containing every live Logcat session, sorted

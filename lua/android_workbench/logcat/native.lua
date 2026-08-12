@@ -5,10 +5,10 @@ local Spool = require 'android_workbench.logcat.spool'
 local M = {}
 
 local DEFAULT_HEIGHT = 15
-local DEFAULT_INITIAL_LINES = 200
 local DEFAULT_MAX_LINE_BYTES = 64 * 1024
 local DEFAULT_MAX_RECORDS = 10000
 local DEFAULT_MAX_RETAINED_BYTES = 4 * 1024 * 1024
+local DEFAULT_UID_REFRESH_INTERVAL_MS = 1000
 local DEFAULT_UID_TIMEOUT_MS = 30000
 local MAX_SOURCE_ENTRIES = 50000
 
@@ -168,7 +168,7 @@ function M.new(opts)
   local max_records = opts.max_records or DEFAULT_MAX_RECORDS
   local max_line_bytes = opts.max_line_bytes or DEFAULT_MAX_LINE_BYTES
   local max_retained_bytes = opts.max_retained_bytes or DEFAULT_MAX_RETAINED_BYTES
-  local initial_lines = opts.initial_lines or DEFAULT_INITIAL_LINES
+  local initial_lines = opts.initial_lines
   local height = opts.height or DEFAULT_HEIGHT
   local uid_timeout_ms = opts.uid_timeout_ms or DEFAULT_UID_TIMEOUT_MS
   local runner = opts.runner or Runner.new { max_capture_bytes = 64 * 1024 }
@@ -239,6 +239,8 @@ function M.new(opts)
         discarding_cr = false,
         records = {},
         record_bytes = 0,
+        pending_records = {},
+        pending_record_bytes = 0,
         rendered_records = 0,
         filters = { level = 'verbose', tag = nil, text = nil },
         paused = false,
@@ -246,6 +248,10 @@ function M.new(opts)
         source_index = nil,
         source_win = nil,
         timer = nil,
+        uid_child = nil,
+        uid_query_generation = 0,
+        uid_query_timeout_timer = nil,
+        uid_refresh_timer = nil,
         picker_handle = nil,
         child_generation = 0,
         pending_error = nil,
@@ -384,6 +390,8 @@ function M.new(opts)
         if not record then return nil end
         return {
           timestamp = record.timestamp,
+          uid = record.uid,
+          application_id = record.application_id,
           pid = record.pid,
           tid = record.tid,
           priority = record.priority,
@@ -514,6 +522,45 @@ function M.new(opts)
         append_memory(records)
       end
 
+      local function append_pending(record)
+        if record.uid == nil or state.done or state.discard_history then return end
+        state.pending_records[#state.pending_records + 1] = record
+        state.pending_record_bytes = state.pending_record_bytes + #record.raw
+        local count = #state.pending_records
+        local trim = count > max_records and math.max(count - max_records, math.max(1, math.floor(max_records / 10))) or 0
+        local retained_bytes = state.pending_record_bytes
+        for index = 1, trim do
+          retained_bytes = retained_bytes - #state.pending_records[index].raw
+        end
+        while trim < count and retained_bytes > max_retained_bytes do
+          trim = trim + 1
+          retained_bytes = retained_bytes - #state.pending_records[trim].raw
+        end
+        if trim > 0 then
+          local retained = {}
+          for index = trim + 1, count do
+            retained[#retained + 1] = state.pending_records[index]
+          end
+          state.pending_records = retained
+          state.pending_record_bytes = retained_bytes
+        end
+      end
+
+      local function adopt_uid(uid)
+        state.uid = uid
+        if not uid or #state.pending_records == 0 then return end
+        local accepted = {}
+        for _, record in ipairs(state.pending_records) do
+          if record.uid == uid then
+            record.application_id = request.application_id
+            accepted[#accepted + 1] = record
+          end
+        end
+        state.pending_records = {}
+        state.pending_record_bytes = 0
+        append_records(accepted)
+      end
+
       local function consume(data)
         if state.done or type(data) ~= 'string' or data == '' then return end
         local value = state.partial == '' and data or state.partial .. data
@@ -526,8 +573,13 @@ function M.new(opts)
           if newline - start <= max_line_bytes then
             local line = value:sub(start, newline - 1)
             local record = Model.parse_line(line, state.previous)
+            if record.uid ~= nil and record.uid == state.uid then record.application_id = request.application_id end
             state.previous = compact_context(record)
-            records[#records + 1] = record
+            if record.application_id == request.application_id then
+              records[#records + 1] = record
+            else
+              append_pending(record)
+            end
           else
             state.previous = nil
           end
@@ -584,6 +636,8 @@ function M.new(opts)
         if discard then
           state.records = {}
           state.record_bytes = 0
+          state.pending_records = {}
+          state.pending_record_bytes = 0
           state.source_index = nil
           release_buffer_history()
         end
@@ -662,8 +716,15 @@ function M.new(opts)
         if state.done then return false end
         state.done = true
         state.child_generation = state.child_generation + 1
+        state.uid_query_generation = state.uid_query_generation + 1
         close_timer(state.timer)
         state.timer = nil
+        close_timer(state.uid_query_timeout_timer)
+        state.uid_query_timeout_timer = nil
+        close_timer(state.uid_refresh_timer)
+        state.uid_refresh_timer = nil
+        cancel_handle(state.uid_child)
+        state.uid_child = nil
         cancel_handle(state.picker_handle)
         state.picker_handle = nil
         state.child = nil
@@ -675,12 +736,17 @@ function M.new(opts)
           if line:sub(-1) == '\r' then line = line:sub(1, -2) end
           local record = Model.parse_line(line, state.previous)
           state.partial = ''
-          state.records[#state.records + 1] = record
-          state.record_bytes = state.record_bytes + #record.raw
-          trim_records()
+          if record.uid ~= nil and record.uid == state.uid then record.application_id = request.application_id end
+          if record.application_id == request.application_id then
+            state.records[#state.records + 1] = record
+            state.record_bytes = state.record_bytes + #record.raw
+            trim_records()
+          end
         end
         state.partial = ''
         state.previous = nil
+        state.pending_records = {}
+        state.pending_record_bytes = 0
         if discard_history then
           state.records = {}
           state.record_bytes = 0
@@ -732,6 +798,99 @@ function M.new(opts)
         end
         state.child = child
         return true
+      end
+
+      local refresh_uid
+
+      local function schedule_uid_refresh()
+        if state.done or state.stop_requested or state.phase ~= 'running' or state.uid_refresh_timer then return end
+        state.uid_refresh_timer = defer_fn(function()
+          local timer = state.uid_refresh_timer
+          state.uid_refresh_timer = nil
+          close_timer(timer)
+          refresh_uid()
+        end, DEFAULT_UID_REFRESH_INTERVAL_MS)
+      end
+
+      refresh_uid = function()
+        if state.done or state.stop_requested or state.phase ~= 'running' or state.uid_child then return end
+        state.uid_query_generation = state.uid_query_generation + 1
+        local token = state.uid_query_generation
+        local timed_out = false
+
+        local function terminal(err, result)
+          if state.done or state.uid_query_generation ~= token then return end
+          state.uid_query_generation = state.uid_query_generation + 1
+          state.uid_child = nil
+          close_timer(state.uid_query_timeout_timer)
+          state.uid_query_timeout_timer = nil
+          if timed_out or err or not result or result.status ~= 'success' then
+            state.uid = nil
+          else
+            adopt_uid(parse_uid(result.stdout, request.application_id))
+          end
+          update_winbars()
+          schedule_uid_refresh()
+        end
+
+        local started, child = pcall(runner.start, {
+          argv = {
+            adb,
+            '-s',
+            request.device_serial,
+            'shell',
+            'cmd',
+            'package',
+            'list',
+            'packages',
+            '-U',
+            '--user',
+            'current',
+            request.application_id,
+          },
+          cwd = request.root,
+          name = ('Refresh Logcat package identity for %s'):format(request.application_id),
+          metadata = { kind = 'android-logcat-uid', root = request.root, device_serial = request.device_serial },
+        }, terminal)
+        if not started then
+          if not state.done and state.uid_query_generation == token then
+            state.uid_query_generation = state.uid_query_generation + 1
+            state.uid = nil
+            update_winbars()
+            schedule_uid_refresh()
+          end
+          return
+        end
+        if state.done or state.uid_query_generation ~= token then
+          cancel_handle(child)
+          return
+        end
+        if type(child) ~= 'table' or type(child.cancel) ~= 'function' then
+          state.uid_query_generation = state.uid_query_generation + 1
+          state.uid = nil
+          update_winbars()
+          schedule_uid_refresh()
+          return
+        end
+        state.uid_child = child
+        state.uid_query_timeout_timer = defer_fn(function()
+          state.uid_query_timeout_timer = nil
+          if state.done or state.uid_query_generation ~= token then return end
+          timed_out = true
+          state.uid = nil
+          update_winbars()
+          cancel_handle(state.uid_child)
+        end, uid_timeout_ms)
+      end
+
+      local function stop_uid_monitor()
+        state.uid_query_generation = state.uid_query_generation + 1
+        close_timer(state.uid_query_timeout_timer)
+        state.uid_query_timeout_timer = nil
+        close_timer(state.uid_refresh_timer)
+        state.uid_refresh_timer = nil
+        cancel_handle(state.uid_child)
+        state.uid_child = nil
       end
 
       local function create_source_index()
@@ -1098,9 +1257,11 @@ function M.new(opts)
             update_winbars()
             return false
           end
+          stop_uid_monitor()
           if state.hidden then close_private_history(true) end
           close_help()
         else
+          stop_uid_monitor()
           finish { status = 'stopped' }
         end
         return true
@@ -1123,6 +1284,8 @@ function M.new(opts)
           follow = state.follow,
           records = #state.records + spool_status.records,
           retained_bytes = state.record_bytes + spool_status.raw_bytes,
+          pending_records = #state.pending_records,
+          pending_bytes = state.pending_record_bytes,
           in_memory_records = #state.records,
           storage = state.restoring and 'restoring' or (state.hidden and not state.spool_failed and 'disk' or 'memory'),
           spool_files = spool_status.files,
@@ -1196,21 +1359,23 @@ function M.new(opts)
         state.uid = uid
         state.phase = 'running'
         render()
-        start_runner({
-          argv = {
-            adb,
-            '-s',
-            request.device_serial,
-            'logcat',
-            '--uid=' .. uid,
-            '-b',
-            'main,system,crash',
-            '-v',
-            'threadtime,year,printable',
-            '-T',
-            tostring(initial_lines),
-            '*:V',
-          },
+        local stream_argv = {
+          adb,
+          '-s',
+          request.device_serial,
+          'logcat',
+          '-b',
+          'main,system,crash',
+          '-v',
+          'threadtime,year,uid,printable',
+        }
+        if initial_lines then
+          stream_argv[#stream_argv + 1] = '-T'
+          stream_argv[#stream_argv + 1] = tostring(initial_lines)
+        end
+        stream_argv[#stream_argv + 1] = '*:V'
+        local stream_started = start_runner({
+          argv = stream_argv,
           cwd = request.root,
           name = ('Logcat %s on %s'):format(request.application_id, request.device_serial),
           metadata = {
@@ -1218,7 +1383,6 @@ function M.new(opts)
             root = request.root,
             application_id = request.application_id,
             device_serial = request.device_serial,
-            uid = uid,
           },
           on_output = function(event)
             if event.stream ~= 'stdout' then return end
@@ -1243,6 +1407,7 @@ function M.new(opts)
             error = stream_err or failure('logcat_stopped', 'Android Logcat stopped unexpectedly.', details),
           }
         end)
+        if stream_started and not state.done then schedule_uid_refresh() end
       end)
 
       return handle

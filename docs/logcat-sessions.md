@@ -12,10 +12,10 @@ without stopping another session. Stopping or closing one session should not
 affect its siblings.
 
 The Neovim session picker is the practical equivalent of Android Studio's tab
-strip. The first implementation should preserve Workbench's app-scoped UID
-capture rather than copying Android Studio's device-wide capture internals.
-Hidden native sessions should keep collecting while moving their bounded
-history from memory into private temporary storage.
+strip. Each native session should read its device independently and apply its
+application package filter inside Workbench. Hidden native sessions should keep
+collecting while moving their bounded history from memory into private
+temporary storage.
 
 ## Evidence baseline
 
@@ -139,6 +139,27 @@ late exit from removing a successor or sibling. R4.4 adds the public picker and
 commands for choosing and stopping those entries. Native in-buffer
 discoverability and exact integration evidence remain.
 
+The R4.4 device smoke exposed a capture defect in the original D1 boundary.
+After uninstalling and reinstalling the same application ID, Android assigned a
+new UID while the retained `adb logcat --uid=OLD_UID` reader remained live. The
+session then silently omitted the reinstalled application. The same smoke also
+proved that `-T 200` selects the last 200 device-wide records before applying
+the UID filter: the exact command returned no application history while the
+same UID query without `-T` returned 28 records, including the launch marker.
+
+The corrected native backend follows Studio's capture/filter split. Each
+session owns a device-wide reader, asks Logcat to include UID metadata, resolves
+the exact package-to-UID mapping independently, and filters records inside
+Workbench. The mapping is refreshed while the reader remains live, so a
+package reinstall changes temporary capture metadata without changing the
+session identity, reader, buffer, filters, or retained history. Workbench uses
+bounded package-manager queries rather than copying Studio's JDWP and deployed
+native process-tracker implementation. By default the reader consumes the
+device's already bounded Logcat buffers without `-T`, as Studio's default live
+read does; Workbench's existing record, byte, and logical-line limits remain
+the application-history boundary. Device records awaiting the next mapping
+refresh are separately bounded by the same record and byte ceilings.
+
 One hermetic clean-Neovim measurement fed 10,000 synthetic records of about 440
 bytes into each native session. Four saturated sessions added 47.34 MiB of RSS;
 eight added 99.80 MiB. This measures host memory for the current implementation,
@@ -152,8 +173,8 @@ unlinking its pathname.
 | --- | --- | --- |
 | Same device, different apps | Independent panels with package queries | Independent app-scoped sessions |
 | Selecting a session | Reveals a panel; siblings keep running | Reveals a buffer; siblings keep running |
-| Capture source | Device-wide per panel | UID-scoped per session |
-| Application association | Mutable query | Initial fixed capture identity |
+| Capture source | Device-wide per panel | Device-wide per session |
+| Application association | Mutable query | Fixed package filter and session identity |
 | Reader sharing | One reader per panel | One reader per session |
 | Visible history | Bounded in memory per panel | Existing bounds in memory per session |
 | Hidden history | Feature-gated rolling temporary files | Private bounded temporary storage |
@@ -161,11 +182,10 @@ unlinking its pathname.
 | Persistence | Panel configuration, not messages | Deferred |
 | Splits | Supported | Deferred |
 
-The planned user workflow is a verified subset of Android Studio behavior. UID
-capture is an intentional implementation difference. It reduces unrelated log
-volume and reuses Workbench's proven process-restart behavior, but changing the
-application associated with an existing session will require a new capture
-instead of merely re-filtering device-wide history.
+The planned user workflow is a verified subset of Android Studio behavior.
+Workbench keeps the package filter fixed for a session and does not implement
+Studio's general query language, but it now uses the same device-wide capture
+and client-side application-filter boundary.
 
 ## Accepted direction
 
@@ -177,7 +197,9 @@ instead of merely re-filtering device-wide history.
 - Keep switching, hiding, stopping, and shutdown as separate lifecycle events.
 - Keep one shared native Logcat dock and switch its displayed session without
   stopping any reader.
-- Retain the native UID-scoped backend for the first version.
+- Keep one device-wide native reader per session and filter it by the session's
+  exact application ID inside Workbench.
+- Treat UID as refreshed device metadata, never as session identity.
 - Keep session history independently count-, byte-, and line-bounded.
 - Move hidden native histories into private, immediately unlinked temporary
   files while their readers continue collecting.
@@ -197,7 +219,8 @@ instead of merely re-filtering device-wide history.
 
 ## First-version non-goals
 
-- Device-wide capture and Android Studio's process-name monitor.
+- Android Studio's general process-name monitor and deployed native tracking
+  agent.
 - A compatible `package:` or `process:` query language.
 - One shared device collector that fans out to sessions.
 - Split Logcat views, tab renaming, or persisted session configuration or
@@ -210,7 +233,9 @@ instead of merely re-filtering device-wide history.
 
 ## Accepted decisions
 
-- **D1 — Capture:** Keep one UID-scoped ADB reader per session.
+- **D1 — Capture:** Keep one device-wide ADB reader per session, include UID in
+  each formatted record, refresh the exact package-to-UID mapping while the
+  reader remains live, and filter records inside Workbench.
 - **D2 — Identity:** Application ID plus device serial defines a session.
   Gradle target, variant, AVD name, and process ID do not create duplicates.
 - **D3 — Capacity:** Set no aggregate session-count cap. Creation is explicit,
@@ -331,7 +356,39 @@ instead of merely re-filtering device-wide history.
   the current session marked, switched both directions without changing the
   three-window layout or reader count, and stopped both readers through the
   public stop-all command. Both app processes and generated Gradle output were
-  cleaned afterward.
+  cleaned afterward. That smoke subsequently exposed the stale-UID defect
+  recorded above; its session-control evidence remains valid, while D1 has been
+  corrected separately.
+
+### R4.4a — Package-stable native capture
+
+- Outcome: A retained native session continues showing the same application
+  after uninstall and reinstall changes its UID.
+- In scope: one device-wide reader per session; UID-aware parsing; exact
+  package mapping and refresh; bounded pre-refresh classification; full bounded
+  device history by default; refresh cancellation and late-callback guards;
+  vimdoc, architecture, decision, changelog, and roadmap updates.
+- Out of scope: Studio's general query language, JDWP/native-agent process
+  monitor, a shared device collector, custom-presenter behavior, and shared-UID
+  package separation.
+- Depends on: R4.4.
+- Decisions used: corrected D1, D2 through D6, and AN015.
+- Automated proof: focused red/green native contracts for another UID, named
+  Android UIDs, records arriving before remapping, pending bounds, no default
+  `-T`, active-refresh stop, refusal, and late callbacks; then `make test`,
+  `make test-format`, help generation, and `git diff --check`.
+- Manual proof: uninstall and reinstall the selected fixture while retaining
+  the exact reader and session buffer; verify old/new UID, reader PID and argv,
+  recovered launch marker, and final process cleanup.
+- Decision gate: none.
+- Status: complete. On `emulator-5554`, the exact uncommitted candidate kept
+  reader PID 69645 and its buffer live while
+  `com.example.workbenchsmoke` changed from UID 10216 to 10218. The reader argv
+  was device-wide, requested `threadtime,year,uid,printable`, and contained
+  neither `--uid` nor `-T`. The retained session recovered four post-clear
+  launch markers among 105 records. Stop left zero Logcat readers, zero package
+  refresh queries, no app process, and no generated app build directory; the
+  emulator remained online and the reinstalled fixture remained installed.
 
 ### R4.5 — Discoverable native switching
 
@@ -359,7 +416,8 @@ instead of merely re-filtering device-wide history.
   one physical device or emulator without lifecycle, process, or temporary-file
   leakage.
 - In scope: start A; start B; verify independent markers; switch repeatedly;
-  hide and restore history; restart an application process; stop one session
+  hide and restore history; restart an application process; reinstall one
+  package and verify its retained session adopts the new UID; stop one session
   while its sibling remains live; exercise stop-all; exit Neovim; and inspect
   for surviving Workbench-owned readers or spool paths.
 - Out of scope: a device/OS compatibility matrix, Android Studio query parity,

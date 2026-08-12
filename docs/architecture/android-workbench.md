@@ -301,18 +301,24 @@ single in-flight write finishes. The scratch buffer contains records rather
 than scrolling UI chrome; the native presenter does not alter global mappings
 or unrelated windows.
 
-The stream survives application process restarts by resolving the selected
-application UID. Opening an exact application/device identity reveals its
-existing handle; another identity starts a sibling without replacing or
-stopping it. Exact entry tokens keep a late old exit from clearing a successor
-or sibling. Logical-line and retained record bytes are bounded in addition to
-record count. An oversized logical line is discarded through its next newline
-before parsing resumes. Hiding the last native window releases parsed records,
-buffer lines, and the source index while capture continues into private
-storage. Showing restores the newest records in order before reapplying
-filters. Stop, wipeout, terminal exit, and the native handle's private
-shutdown-abandon transition close that storage; the private transition is not
-part of the experimental replacement-port contract.
+Each native session owns a device-wide Logcat reader. The parser removes UID
+metadata from display text after using it to associate records with the exact
+application ID. A bounded package query refreshes that temporary mapping while
+the reader remains live, so process restarts and package reinstalls do not
+replace the application/device session or its retained history. Opening an
+exact application/device identity reveals its existing handle; another
+identity starts a sibling without replacing or stopping it. Exact entry tokens
+keep a late old exit from clearing a successor or sibling. Logical-line and
+retained record bytes are bounded in addition to record count. Device records
+waiting for the next mapping refresh have separate count and byte bounds. An
+oversized logical line is discarded through its next newline before parsing
+resumes.
+Hiding the last native window releases parsed records, buffer lines, and the
+source index while capture continues into private storage. Showing restores
+the newest records in order before reapplying filters. Stop, wipeout, terminal
+exit, and the native handle's private shutdown-abandon transition close that
+storage; the private transition is not part of the experimental
+replacement-port contract.
 The native dock is likewise private presentation policy; custom Logcat
 presenters retain complete ownership of their windows.
 
@@ -490,8 +496,9 @@ The standalone contract suites are organized by owner:
 - [`android-workbench-emulator.lua`](../../tests/android-workbench-emulator.lua):
   native AVD discovery, adoption, duplicate protection, readiness, exact stop,
   timeout, and cleanup ownership.
-- [`android-workbench-logcat.lua`](../../tests/android-workbench-logcat.lua): UID
-  stream/model/presenter behavior, history, navigation, and teardown.
+- [`android-workbench-logcat.lua`](../../tests/android-workbench-logcat.lua):
+  device-wide stream parsing, package filtering and refresh, presenter history,
+  navigation, and teardown.
 - [`android-workbench-telescope.lua`](../../tests/android-workbench-telescope.lua):
   selection, cancellation, prompt wipeout, and exactly-once completion for the
   optional picker adapter.
