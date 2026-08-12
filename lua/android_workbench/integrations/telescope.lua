@@ -63,9 +63,8 @@ function M.new()
 
           actions.select_default:replace(function()
             local entry = action_state.get_selected_entry()
-            finished = true
             actions.close(prompt_bufnr)
-            callback(nil, entry and entry.value or nil)
+            finish(nil, entry and entry.value or nil)
           end)
           return true
         end,

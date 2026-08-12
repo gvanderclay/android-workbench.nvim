@@ -68,8 +68,13 @@ function M.check()
 
   local resolved, err = require('android_workbench.root').new():resolve { path = vim.uv.cwd() }
   if resolved then
-    vim.health.ok(('Gradle wrapper: %s'):format(resolved.wrapper))
-    vim.health.info(('Project root: %s'):format(resolved.root))
+    local wrapper, wrapper_err = require('android_workbench.gradle.wrapper').resolve(resolved.root)
+    if wrapper then
+      vim.health.ok(('Gradle wrapper: %s'):format(wrapper))
+      vim.health.info(('Project root: %s'):format(resolved.root))
+    else
+      vim.health.error(wrapper_err)
+    end
   elseif err and err.code == 'gradle_wrapper_not_found' then
     vim.health.info 'The current directory is not inside a Gradle wrapper project'
   else

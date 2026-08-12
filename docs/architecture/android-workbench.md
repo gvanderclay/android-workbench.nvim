@@ -171,6 +171,10 @@ failed writes roll back or use an explicit reconciliation path.
 `gradle/model.lua` decodes a complete neutral snapshot; and
 `gradle/metadata.lua` evaluates bounded staleness inputs.
 
+`gradle/wrapper.lua` owns the regular-file and executable prerequisite shared by
+discovery and health. Health reports the prerequisite without executing the
+wrapper or authorizing project code.
+
 Discovery output is untrusted data. A snapshot must match the requested
 canonical root and contain valid, bounded, closed build, target, and task
 collections with exact identities. Native and custom discovery results require
@@ -459,6 +463,9 @@ The standalone contract suites are organized by owner:
   timeout, and cleanup ownership.
 - [`android-workbench-logcat.lua`](../../tests/android-workbench-logcat.lua): UID
   stream/model/presenter behavior, history, navigation, and teardown.
+- [`android-workbench-telescope.lua`](../../tests/android-workbench-telescope.lua):
+  selection, cancellation, prompt wipeout, and exactly-once completion for the
+  optional picker adapter.
 
 `tests/package-smoke.lua` separately verifies ordinary clean plugin loading,
 `:Android`, setup/App laziness, no package-defined mappings or eager optional

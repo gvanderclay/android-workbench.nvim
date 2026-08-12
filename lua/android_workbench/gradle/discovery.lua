@@ -1,5 +1,6 @@
 local model = require 'android_workbench.gradle.model'
 local metadata = require 'android_workbench.gradle.metadata'
+local wrapper = require 'android_workbench.gradle.wrapper'
 
 local M = {}
 
@@ -42,14 +43,6 @@ local function nonce()
     return table.concat(encoded)
   end
   return vim.fn.sha256(table.concat({ tostring(vim.uv.hrtime()), tostring(vim.uv.os_getpid()), tostring {} }, ':')):sub(1, 32)
-end
-
-local function wrapper_path(root)
-  local path = vim.fs.joinpath(root, 'gradlew')
-  local stat = vim.uv.fs_stat(path)
-  if not stat or stat.type ~= 'file' then return nil end
-  if vim.fn.executable(path) ~= 1 then return nil, 'Gradle wrapper is not executable: ' .. path end
-  return path
 end
 
 local function excerpt(value)
@@ -137,8 +130,8 @@ function M.discover(opts, callback)
     finish(failure('invalid_root', root_err))
     return handle
   end
-  local wrapper, wrapper_err = wrapper_path(root)
-  if not wrapper then
+  local wrapper_path, wrapper_err = wrapper.resolve(root)
+  if not wrapper_path then
     finish(failure('wrapper_not_found', wrapper_err or ('No Gradle wrapper found under ' .. root)))
     return handle
   end
@@ -150,7 +143,7 @@ function M.discover(opts, callback)
 
   local invocation_nonce = nonce()
   local argv = {
-    wrapper,
+    wrapper_path,
     '--init-script',
     script,
     '--console=plain',

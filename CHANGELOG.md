@@ -30,6 +30,10 @@ while the first pre-1.0 release gates remain open.
   undocumented adapter payloads.
 - Plugin startup now preserves an existing global `:Android` command and emits
   one warning instead of replacing it.
+- Health now applies discovery's regular-file and executable checks to the
+  current project's Gradle wrapper.
+- Telescope selection now shares the adapter's terminal guard, preventing a
+  duplicate or late selection callback after completion or picker wipeout.
 
 ### Removed
 

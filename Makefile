@@ -3,6 +3,7 @@ ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 CONTRACT_TESTS := \
 	android-workbench-api.lua \
+	android-workbench-health.lua \
 	android-workbench-core.lua \
 	android-workbench-state.lua \
 	android-workbench-device.lua \
@@ -14,6 +15,8 @@ CONTRACT_TESTS := \
 	android-workbench-emulator.lua \
 	android-workbench-execution.lua \
 	android-workbench-logcat.lua
+
+CONTRACT_TESTS += android-workbench-telescope.lua
 
 .DEFAULT_GOAL := test
 
