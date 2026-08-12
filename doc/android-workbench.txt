@@ -536,6 +536,10 @@ pending public callback and late outward side effect. A later facade action
 constructs a fresh independent instance. `setup()` may configure that new
 instance before its first action.
 
+Normal Neovim exit invokes `shutdown()` during |VimLeavePre| when the facade
+has already been loaded. The exit hook does not load an unused Workbench
+facade. Explicit shutdown remains available for host teardown and tests.
+
 RESULTS
 
 `status()` and successful refresh/selection callbacks return: >lua

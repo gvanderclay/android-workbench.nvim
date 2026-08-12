@@ -494,6 +494,37 @@ vimdoc and tests.
   shared process monitor, exact shared-UID separation becomes necessary, or a
   general package/process query language is accepted.
 
+## AN016 — Shut down loaded Workbench state on normal Neovim exit
+
+- **Status:** Accepted
+- **Decision:** Register one `VimLeavePre` runtime hook that invokes the public
+  shutdown boundary only when the Workbench facade is already present in
+  `package.loaded`. Protect exit from cleanup errors and run the hook at most
+  once.
+- **Requirements:** Preserve lazy package startup, including command-collision
+  startup. Reuse facade shutdown rather than adding a process sweep or a second
+  teardown path. Do not stop a launched application or emulator as part of
+  editor exit.
+- **Considered:** Requiring consumers to call shutdown explicitly, requiring
+  the facade during every exit, registering a later `VimLeave` hook, and
+  scanning for matching operating-system processes after exit.
+- **Rationale:** A normal `:qa!` from the isolated smoke left an owned ADB
+  Logcat reader reparented to PID 1. A focused check then proved that
+  `VimLeavePre` invoked zero Workbench shutdown calls because no exit hook was
+  registered. The existing irreversible shutdown boundary already owns the
+  correct generation-safe cleanup.
+- **Tradeoffs:** Cleanup errors are suppressed while Neovim is exiting. The
+  hook cannot run after a hard process kill or another exit that does not emit
+  `VimLeavePre`; operating-system child termination remains a leaf-process
+  concern.
+- **Consequences:** Normal editor exit closes loaded Workbench sessions, views,
+  temporary storage, and cancellable children. An unused installation remains
+  unloaded through exit, and explicit shutdown remains available to hosts and
+  tests.
+- **Revisit when:** Neovim adds a stronger normal-exit lifecycle event, a
+  supported embedding host needs a distinct teardown contract, or measured
+  cleanup failures need user-visible reporting before exit.
+
 ## Repository extraction status
 
 Moving the runtime into this repository does not change AN001–AN006. The module

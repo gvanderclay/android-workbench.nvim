@@ -31,6 +31,9 @@ local ok, unexpected = xpcall(function()
   expect('incumbent invocation emits no Workbench notification', #collision.notifications, 1)
   expect('collision does not load the command implementation', package.loaded['android_workbench.command'], nil)
   expect('collision does not construct the application', package.loaded['android_workbench.app'], nil)
+
+  vim.api.nvim_exec_autocmds('VimLeavePre', {})
+  expect('exit cleanup does not load the facade', package.loaded.android_workbench, nil)
 end, debug.traceback)
 
 if not ok then fail('unexpected test error', unexpected) end

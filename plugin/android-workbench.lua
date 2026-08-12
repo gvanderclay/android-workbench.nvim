@@ -1,6 +1,17 @@
 if vim.g.loaded_android_workbench then return end
 vim.g.loaded_android_workbench = true
 
+local lifecycle_group = vim.api.nvim_create_augroup('AndroidWorkbenchLifecycle', { clear = true })
+vim.api.nvim_create_autocmd('VimLeavePre', {
+  group = lifecycle_group,
+  once = true,
+  callback = function()
+    local android = package.loaded.android_workbench
+    if type(android) == 'table' and type(android.shutdown) == 'function' then pcall(android.shutdown) end
+  end,
+  desc = 'Shut down Android Workbench',
+})
+
 if vim.fn.exists ':Android' == 2 then
   vim.notify('Android Workbench: :Android already exists; command registration skipped.', vim.log.levels.WARN)
   return

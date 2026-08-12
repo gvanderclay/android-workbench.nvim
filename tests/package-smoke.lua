@@ -74,6 +74,15 @@ local ok, unexpected = xpcall(function()
   unloaded 'android_workbench.integrations.telescope'
   unloaded 'android_workbench.integrations.overseer'
   unloaded 'trouble'
+
+  local android = assert(package.loaded.android_workbench)
+  local shutdown = android.shutdown
+  local shutdown_calls = 0
+  android.shutdown = function() shutdown_calls = shutdown_calls + 1 end
+  vim.api.nvim_exec_autocmds('VimLeavePre', {})
+  vim.api.nvim_exec_autocmds('VimLeavePre', {})
+  expect('VimLeavePre shuts Workbench down once', shutdown_calls, 1)
+  android.shutdown = shutdown
 end, debug.traceback)
 
 if not ok then fail('unexpected test error', unexpected) end

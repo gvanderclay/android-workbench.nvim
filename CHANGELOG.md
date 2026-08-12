@@ -50,6 +50,12 @@ while the first pre-1.0 release gates remain open.
   filter inside Workbench, preserving a session across package reinstalls and
   reading the device's full bounded history by default.
 
+### Fixed
+
+- Normal Neovim exit now shuts down an already-loaded Workbench instance, so
+  owned Logcat readers cannot survive `:qa!` while an unused package remains
+  unloaded.
+
 ### Removed
 
 - The internal `_notify` helper from the public facade.

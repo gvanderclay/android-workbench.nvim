@@ -39,7 +39,10 @@ the `:Android` command. Its completion grammar is static and must not construct
 the application, inspect a project, query ADB, enumerate AVDs, prompt for trust,
 or execute Gradle. Registration never replaces an existing global `:Android`
 command: the incumbent remains callable and Workbench emits one warning without
-loading its command implementation.
+loading its command implementation. The same runtime file registers one
+`VimLeavePre` hook before collision handling. It consults only `package.loaded`
+and shuts down an already-loaded facade without requiring Workbench during an
+otherwise unused exit.
 
 [`android_workbench/init.lua`](../../lua/android_workbench/init.lua) is the Lua
 facade. It owns setup, contextual argument normalization, the lazy singleton,
@@ -141,7 +144,9 @@ tokens, retains refusals, and bounds its returned refusal identities.
 Public shutdown closes and discards the current instance. A later action may
 construct a fresh `App`. Shutdown revokes the old generation even when an
 adapter refuses cancellation. The child may finish privately, but its terminal
-cannot resume App work or affect the replacement instance.
+cannot resume App work or affect the replacement instance. Normal Neovim exit
+reaches this same boundary through the lazy runtime hook; it does not sweep
+unowned processes or stop a launched application or emulator.
 
 ### Session
 
