@@ -1,9 +1,35 @@
 # Changelog
 
-Android Workbench is still unreleased. This file records user-visible changes
-while the first pre-1.0 release gates remain open.
+This file records user-visible Android Workbench changes.
 
 ## Unreleased
+
+### Added
+
+- Private bounded temporary storage for hidden native Logcat history, with
+  ordered restoration while capture remains active.
+- Independent root-local Logcat sessions keyed by application ID and device
+  serial, including exact reuse and sibling-safe lifecycle handling.
+- Root-local Logcat session selection and best-effort stop-all commands, facade
+  methods, and contextual actions with bounded refusal reporting.
+- A visible native Logcat session switcher with buffer-local `S` and shortcut
+  help, backed by the existing root-local picker.
+
+### Changed
+
+- Native Logcat handles created by one presenter now switch independent session
+  buffers through its owned bottom split without replacing unrelated windows.
+- Native Logcat now reads device-wide output and applies a refreshed package
+  filter inside Workbench, preserving a session across package reinstalls and
+  reading the device's full bounded history by default.
+
+### Fixed
+
+- Normal Neovim exit now shuts down an already-loaded Workbench instance, so
+  owned Logcat readers cannot survive `:qa!` while an unused package remains
+  unloaded.
+
+## 0.1.0 - 2026-08-12
 
 ### Added
 
@@ -19,14 +45,6 @@ while the first pre-1.0 release gates remain open.
 - A supported five-method `0.x` ADB service contract, including its conditional
   native emulator and Logcat composition limits.
 - Explicit `0.x` maturity labels for every replacement port.
-- Private bounded temporary storage for hidden native Logcat history, with
-  ordered restoration while capture remains active.
-- Independent root-local Logcat sessions keyed by application ID and device
-  serial, including exact reuse and sibling-safe lifecycle handling.
-- Root-local Logcat session selection and best-effort stop-all commands, facade
-  methods, and contextual actions with bounded refusal reporting.
-- A visible native Logcat session switcher with buffer-local `S` and shortcut
-  help, backed by the existing root-local picker.
 
 ### Changed
 
@@ -44,17 +62,6 @@ while the first pre-1.0 release gates remain open.
   current project's Gradle wrapper.
 - Telescope selection now shares the adapter's terminal guard, preventing a
   duplicate or late selection callback after completion or picker wipeout.
-- Native Logcat handles created by one presenter now switch independent session
-  buffers through its owned bottom split without replacing unrelated windows.
-- Native Logcat now reads device-wide output and applies a refreshed package
-  filter inside Workbench, preserving a session across package reinstalls and
-  reading the device's full bounded history by default.
-
-### Fixed
-
-- Normal Neovim exit now shuts down an already-loaded Workbench instance, so
-  owned Logcat readers cannot survive `:qa!` while an unused package remains
-  unloaded.
 
 ### Removed
 

@@ -3,10 +3,11 @@
 ## Purpose and status
 
 This repository contains Android Workbench, a focused Neovim plugin for Android
-and Gradle orchestration. It is a source-visible pre-release development
-repository, not a published plugin release. Do not tag a release, submit it to
-a plugin registry, or change the MIT license without explicit owner approval
-and completion of the applicable release gates in `docs/roadmap.md`.
+and Gradle orchestration. It is an MIT-licensed plugin with an initial
+`v0.1.0` tag and no plugin-registry publication. Do not create or change a tag,
+publish a GitHub release, submit to a plugin registry, or change the MIT license
+without explicit owner approval and completion of the applicable release gates
+in `docs/roadmap.md`.
 
 ## Session continuity
 

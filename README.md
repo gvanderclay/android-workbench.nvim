@@ -7,9 +7,9 @@ coordinates build, install, launch, stop, emulator, Gradle-task, build-problem,
 and Logcat workflows.
 
 > [!IMPORTANT]
-> This is a pre-release development repository, not a published plugin release.
-> A public tag remains blocked on the runtime and release-evidence gates in
-> [the roadmap](docs/roadmap.md). Pre-release APIs may still change.
+> The latest tagged release is `v0.1.0`. Android Workbench has not been
+> submitted to a plugin registry, and pre-1.0 APIs may still change under the
+> `0.x` policy below.
 
 ## Design boundary
 
@@ -43,8 +43,8 @@ behind the current shape live in [the decision record](docs/decisions.md).
 This list describes implemented breadth, not a public stability promise. The
 intentional pre-1.0 facade and module boundary is documented in
 `:help android-workbench-api`. Supported and experimental replacement ports are
-documented in `:help android-workbench-setup`; release compatibility remains
-roadmap work.
+documented in `:help android-workbench-setup`; compatibility follows the `0.x`
+policy below.
 
 ## Requirements and current support evidence
 
@@ -148,8 +148,8 @@ The contract lane runs the isolated behavioral suites. The package lane checks
 clean startup, command and setup laziness, help, health, and the bundled Gradle
 asset without loading another user configuration. See
 [the architecture guide](docs/architecture/android-workbench.md) for design
-constraints and [the roadmap](docs/roadmap.md) for work that remains before a
-public tag.
+constraints and [the roadmap](docs/roadmap.md) for completed milestones and
+deferred work.
 
 The explicit network/SDK integration gates stay outside `make test`:
 
@@ -164,11 +164,11 @@ and recorded results.
 
 ## Release status
 
-No release or semantic-version compatibility is promised yet. `v0.1.0` is
-gated on the roadmap's runtime containment, public-default, licensing,
-standalone CI, real Gradle/AGP, optional-adapter, and outcome-based daily-use
-checks. Feature count, Windows support, and broad compatibility work are not
-substitutes for those gates.
+`v0.1.0` is the first tagged pre-1.0 release. Its runtime, API, licensing, CI,
+real Gradle/AGP, optional-adapter, and daily-use checks are recorded in the
+[release-evidence ledger](docs/release-evidence.md). The plugin has not been
+submitted to a registry. Later user-visible changes remain under
+`Unreleased` in the [changelog](CHANGELOG.md) until another tag is published.
 
 ## 0.x change policy
 

@@ -532,6 +532,6 @@ namespace, command, state location, bundled provider placement, and consumer
 policy boundary remain intact. Extraction is a packaging and ownership change,
 not permission to widen the plugin or freeze every reachable Lua module.
 
-The repository is MIT-licensed but not yet released. Runtime containment,
-default output, public API, compatibility, and release evidence are tracked
-separately in `roadmap.md`.
+The repository is MIT-licensed and first released as `v0.1.0`. Later feature,
+compatibility, and release-evidence work remains tracked separately in
+`roadmap.md`.
