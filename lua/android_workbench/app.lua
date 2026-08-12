@@ -967,6 +967,16 @@ function App:_open_logcat(session, target, device, focus, callback)
     device_serial = device.serial,
     device = vim.deepcopy(device),
     focus = focus,
+    select_logcat_session = function(done)
+      local operation = self:select_logcat_session({ root = session.root }, done)
+      return {
+        cancel = function()
+          if operation.done then return false end
+          self.operations[operation] = nil
+          return operation:_abandon()
+        end,
+      }
+    end,
     on_exit = function(result)
       vim.schedule(function()
         if self.closed then return end

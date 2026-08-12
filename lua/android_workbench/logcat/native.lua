@@ -214,6 +214,7 @@ function M.new(opts)
       if request.variant ~= nil and (type(request.variant) ~= 'string' or request.variant == '') then
         error('Android Logcat request has an invalid variant', 2)
       end
+      if type(request.select_logcat_session) ~= 'function' then error('Android Logcat request requires a session selector', 2) end
       if type(request.on_exit) ~= 'function' then error('Android Logcat request requires on_exit', 2) end
 
       local resolved, adb, adb_err = pcall(request.resolve_adb)
@@ -253,6 +254,9 @@ function M.new(opts)
         uid_query_timeout_timer = nil,
         uid_refresh_timer = nil,
         picker_handle = nil,
+        session_picker_handle = nil,
+        session_picker_generation = 0,
+        session_picker_active = false,
         child_generation = 0,
         pending_error = nil,
         help_bufnr = nil,
@@ -286,7 +290,7 @@ function M.new(opts)
         local filters = state.filters
         local identity = ('%s · %s%s'):format(request.application_id, request.device_serial, state.uid and (' · uid ' .. state.uid) or '')
         identity = identity:gsub('%%', '%%%%')
-        return (' [p] pause  [f] follow  [c] clear  [?] shortcuts %%=%%< Android Logcat · %s · %s · level≥%s · filters=%s · follow=%s '):format(
+        return (' [S] sessions  [?] shortcuts  [p] pause  [f] follow  [c] clear %%=%%< Android Logcat · %s · %s · level≥%s · filters=%s · follow=%s '):format(
           identity,
           status_label(),
           filters.level:upper(),
@@ -326,6 +330,14 @@ function M.new(opts)
         state.help_bufnr = nil
         if winid and vim.api.nvim_win_is_valid(winid) then pcall(vim.api.nvim_win_close, winid, true) end
         if bufnr and vim.api.nvim_buf_is_valid(bufnr) then pcall(vim.api.nvim_buf_delete, bufnr, { force = true }) end
+      end
+
+      local function cancel_session_picker()
+        state.session_picker_generation = state.session_picker_generation + 1
+        state.session_picker_active = false
+        local picker_handle = state.session_picker_handle
+        state.session_picker_handle = nil
+        cancel_handle(picker_handle)
       end
 
       local function follow_tail()
@@ -727,6 +739,7 @@ function M.new(opts)
         state.uid_child = nil
         cancel_handle(state.picker_handle)
         state.picker_handle = nil
+        cancel_session_picker()
         state.child = nil
         close_help()
         local discard_history = state.hidden or state.discard_history
@@ -1038,6 +1051,38 @@ function M.new(opts)
         if not ok then notify(notifications, 'error', ('Could not open Logcat filter input: %s'):format(err)) end
       end
 
+      local function choose_session()
+        if state.done or state.stop_requested or state.session_picker_active then return end
+        state.session_picker_generation = state.session_picker_generation + 1
+        local token = state.session_picker_generation
+        state.session_picker_active = true
+        local completed = false
+        local started, picker_handle = pcall(request.select_logcat_session, function()
+          if state.done or state.session_picker_generation ~= token then return end
+          completed = true
+          state.session_picker_active = false
+          state.session_picker_handle = nil
+        end)
+        if not started then
+          if state.session_picker_generation == token then
+            state.session_picker_generation = state.session_picker_generation + 1
+            state.session_picker_active = false
+          end
+          notify(notifications, 'error', ('Could not open Logcat session picker: %s'):format(picker_handle))
+        elseif completed then
+          cancel_handle(picker_handle)
+          return
+        elseif state.done or state.session_picker_generation ~= token then
+          cancel_handle(picker_handle)
+        elseif type(picker_handle) ~= 'table' or type(picker_handle.cancel) ~= 'function' then
+          state.session_picker_generation = state.session_picker_generation + 1
+          state.session_picker_active = false
+          notify(notifications, 'error', 'Could not open Logcat session picker: selector returned an invalid handle')
+        else
+          state.session_picker_handle = picker_handle
+        end
+      end
+
       local function hide()
         local winid = vim.api.nvim_get_current_win()
         if vim.api.nvim_win_get_buf(winid) == state.bufnr and #vim.api.nvim_list_wins() > 1 then pcall(vim.api.nvim_win_close, winid, false) end
@@ -1055,6 +1100,7 @@ function M.new(opts)
           ' p       Pause or resume rendering',
           ' f       Toggle following the newest line',
           ' c       Clear the local view',
+          ' S       Select another Logcat session',
           ' l       Choose the minimum level',
           ' t       Filter by tag text',
           ' /       Filter by message text',
@@ -1170,6 +1216,7 @@ function M.new(opts)
           state.previous = nil
           render()
         end, vim.tbl_extend('force', map_opts, { desc = 'Clear local Logcat view' }))
+        vim.keymap.set('n', 'S', choose_session, vim.tbl_extend('force', map_opts, { desc = 'Select Logcat session' }))
         vim.keymap.set('n', 'l', choose_level, vim.tbl_extend('force', map_opts, { desc = 'Set minimum Logcat level' }))
         vim.keymap.set('n', 't', function() choose_text 'tag' end, vim.tbl_extend('force', map_opts, { desc = 'Filter Logcat tags' }))
         vim.keymap.set('n', '/', function() choose_text 'text' end, vim.tbl_extend('force', map_opts, { desc = 'Filter Logcat messages' }))
@@ -1260,6 +1307,7 @@ function M.new(opts)
           stop_uid_monitor()
           if state.hidden then close_private_history(true) end
           close_help()
+          cancel_session_picker()
         else
           stop_uid_monitor()
           finish { status = 'stopped' }
@@ -1271,6 +1319,7 @@ function M.new(opts)
         if state.discard_history then return false end
         state.discard_history = true
         close_help()
+        cancel_session_picker()
         close_private_history(true)
         return true
       end

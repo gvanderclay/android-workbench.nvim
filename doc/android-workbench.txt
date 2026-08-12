@@ -388,8 +388,11 @@ before injection: >lua
 <
 The port has one `start(request)` method and returns a handle with `show()` and
 `stop()`. The request contains neutral project, application, and device data,
-plus an optional lazy `resolve_adb()` function. Custom presenters can ignore
-the resolver and do not receive native-buffer details.
+an optional lazy `resolve_adb()` function, and a
+`select_logcat_session(done)` action returning a cancellable handle. The action
+opens the root-local session picker; cancelling its handle suppresses a late
+choice. Custom presenters may ignore both actions and do not receive
+native-buffer details.
 
 The native defaults retain at most 10,000 application records and 4 MiB of raw
 application record text. Device records waiting for the next package-identity
@@ -838,11 +841,13 @@ window untouched. A custom `ports.logcat` presenter owns its own window policy.
 A window-local bar remains visible while following the stream. It shows the
 application/device identity, stream state, minimum level, follow state, and the
 most common controls. Press `?` for an owned popup containing every shortcut
-and the current filter state.
+and the current filter state. Press `S` to open the root-local session picker;
+its application/device labels mark the current session.
 
 The buffer-local controls are:
 
         ?       Show all Logcat shortcuts and current filter state.
+        S       Select another root-local Logcat session.
         p       Pause or resume rendering; capture remains bounded and active.
         f       Toggle following the newest visible line.
         c       Clear only the local view. It never runs `adb logcat -c`.

@@ -215,7 +215,7 @@ decisions, and checkpoint contracts are recorded in
   best-effort stop-all through deliberate command and facade contracts.
 - [x] R4.4a replace stale UID-scoped capture with device-wide collection and a
   refreshed client-side package filter.
-- [ ] R4.5 make session navigation discoverable in the native Logcat view
+- [x] R4.5 make session navigation discoverable in the native Logcat view
   without defining global mappings or custom-presenter UI policy.
 - [ ] R4.6 record exact same-device/different-app lifecycle, bounded storage,
   and final process/file cleanup evidence.

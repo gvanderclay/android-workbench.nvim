@@ -25,6 +25,8 @@ while the first pre-1.0 release gates remain open.
   serial, including exact reuse and sibling-safe lifecycle handling.
 - Root-local Logcat session selection and best-effort stop-all commands, facade
   methods, and contextual actions with bounded refusal reporting.
+- A visible native Logcat session switcher with buffer-local `S` and shortcut
+  help, backed by the existing root-local picker.
 
 ### Changed
 

@@ -375,6 +375,25 @@ local ok, unexpected = xpcall(function()
   expect('session picker fixture starts root-one sessions', { beta.err, alpha.err }, { nil, nil })
   expect('session picker fixture starts another root independently', other_root.err, nil)
 
+  expect('presenter request exposes root-local session selection', type(controls.starts[2].request.select_logcat_session), 'function')
+  local presenter_selection = { calls = 0 }
+  local presenter_selection_handle = controls.starts[2].request.select_logcat_session(function(err, value)
+    presenter_selection.calls = presenter_selection.calls + 1
+    presenter_selection.err = err
+    presenter_selection.value = value
+  end)
+  local presenter_picker = controls.pickers[#controls.pickers]
+  expect('presenter selector uses the root-local candidates', presenter_picker.request.items, {
+    { application_id = 'example.alpha', device_serial = 'device-1', current = true },
+    { application_id = 'example.beta', device_serial = 'device-1', current = false },
+  })
+  local presenter_picker_cancellations = controls.picker_cancellations
+  expect('presenter selector cancellation is lifecycle-owned', presenter_selection_handle.cancel(), true)
+  expect('presenter selector cancellation reaches its picker', controls.picker_cancellations, presenter_picker_cancellations + 1)
+  presenter_picker.callback(nil, presenter_picker.request.items[2])
+  expect('cancelled presenter selector suppresses a late choice', presenter_selection.calls, 0)
+  expect('cancelled presenter selector never shows a sibling', controls.starts[1].shows, 0)
+
   local mutated, mutated_picker = controls:select(ROOT_ONE)
   local mutated_request = controls.pickers[mutated_picker].request
   expect('session picker prompt is specific', mutated_request.prompt, 'Android Logcat sessions')
@@ -391,8 +410,9 @@ local ok, unexpected = xpcall(function()
   expect('mutated picker selection does not show a session', controls.starts[1].shows, 0)
 
   local cancelled, cancelled_picker = controls:select(ROOT_ONE)
+  local public_picker_cancellations = controls.picker_cancellations
   expect('session picker cancellation is accepted', cancelled.handle.cancel(), true)
-  expect('session picker cancellation reaches its child', controls.picker_cancellations, 1)
+  expect('session picker cancellation reaches its child', controls.picker_cancellations, public_picker_cancellations + 1)
   controls.pickers[cancelled_picker].callback(nil, nil)
   expect('session picker cancellation completes once', cancelled.calls, 1)
   expect('session picker cancellation is classified', cancelled.err and cancelled.err.code, 'cancelled')

@@ -1,7 +1,7 @@
 # Multi-session Logcat research and plan
 
-Status: R4.1 through R4.4 are implemented and verified. R4.5 and R4.6 remain
-planned post-`v0.1.0` work.
+Status: R4.1 through R4.5 are implemented and verified. R4.6 remains planned
+post-`v0.1.0` work.
 
 ## Desired outcome
 
@@ -408,7 +408,13 @@ and client-side application-filter boundary.
 - Manual proof: confirm the control stays readable while two sessions receive
   logs and that switching does not move source-window focus unexpectedly.
 - Decision gate: none.
-- Status: pending.
+- Status: complete. The isolated native smoke kept
+  `com.example.workbenchsmoke` and `com.example.workbenchsmoke.second` running
+  on `emulator-5554` with two readers owned by the exact Neovim process. `S`
+  switched the current session through the root-local picker while reusing
+  window 1003; the Java source remained in window 1000 and the three-window
+  layout did not change. The selected buffer showed the exact application and
+  device identity while its sibling remained live and hidden.
 
 ### R4.6 — Exact integration evidence
 

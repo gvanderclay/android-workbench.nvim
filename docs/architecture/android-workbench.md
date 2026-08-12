@@ -328,7 +328,11 @@ presenters retain complete ownership of their windows.
 `actions.lua` derives a presentation-neutral contextual action list.
 Integration modules implement one port each and do not own core lifecycle
 state. The Logcat session picker uses the existing supported picker port; picker
-items carry only application ID, device serial, and current-session state.
+items carry only application ID, device serial, and current-session state. App
+also supplies each Logcat presenter request with a lifecycle-owned root-local
+session-selection action. The native presenter exposes it through one
+buffer-local control; custom presenters may ignore it and retain their own UI
+policy.
 
 Optional modules must defer their external `require()` calls until their
 adapter is selected or invoked. Package startup and native defaults do not load
@@ -361,8 +365,10 @@ built-in implementation; there is no provider registry or automatic detection.
   and `stop`. Start accepts an AVD name and returns its exact ready device. Stop
   accepts AVD name plus serial and returns the stopped identity.
 - **`logcat` (experimental during `0.x`):** `start(request) -> handle`. The
-  handle provides method-style `show` and `stop`; terminal exit is reported
-  through the request.
+  request includes a presentation-neutral `select_logcat_session(done) ->
+  handle` action whose cancellation suppresses late choices. The returned
+  presenter handle provides method-style `show` and `stop`; terminal exit is
+  reported through the request.
 - **`trust` (experimental during `0.x`):** Synchronous
   `authorize(root) -> true` or `nil, error`.
 - **`state` (experimental during `0.x`):** Synchronous `load(root)` and

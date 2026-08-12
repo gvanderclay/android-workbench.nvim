@@ -444,12 +444,14 @@ vimdoc and tests.
   result even when one custom presenter refuses.
 - **Tradeoffs:** Stop-all covers live sessions, not pending starts; current stop
   remains the way to cancel the most recent pending start. Partial refusal is a
-  successful result that callers must inspect. The public picker does not add a
-  shortcut inside the native Logcat buffer; that remains R4.5.
+  successful result that callers must inspect. Each experimental Logcat request
+  now carries the root-local selection action even when a custom presenter
+  chooses not to expose it.
 - **Consequences:** Commands, the facade, and contextual actions share one
-  root-local lifecycle. Custom pickers receive neutral items, custom Logcat
-  presenters retain their own window policy, and another root is never listed
-  or stopped.
+  root-local lifecycle. The native presenter exposes the same action through
+  `S`, cancels its picker on stop, and ignores late callbacks. Custom pickers
+  receive neutral items, custom Logcat presenters retain their own UI and
+  window policy, and another root is never listed or stopped.
 - **Revisit when:** Pending-start cleanup needs an aggregate public result, a
   real consumer needs richer session metadata, or R4.5 shows that another
   presentation-neutral action is required.

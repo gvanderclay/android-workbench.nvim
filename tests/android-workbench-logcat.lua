@@ -119,6 +119,7 @@ local picker_choice
 local input_calls = {}
 local input_value
 local timers = {}
+local session_selection_calls = {}
 local device_serial = 'adb-example (2)._adb-tls-connect._tcp'
 
 local picker = {
@@ -152,11 +153,22 @@ local function request(on_exit)
     device_serial = device_serial,
     application_id = 'com.example.app',
     focus = true,
+    select_logcat_session = function(callback)
+      local call = { callback = callback, cancellations = 0 }
+      session_selection_calls[#session_selection_calls + 1] = call
+      return {
+        cancel = function()
+          call.cancellations = call.cancellations + 1
+          return true
+        end,
+      }
+    end,
     on_exit = on_exit,
   }
 end
 
 local buffers_to_delete = {}
+local override_session_mapping = false
 local user_ft_group = vim.api.nvim_create_augroup('AndroidWorkbenchLogcatUserFtTest', { clear = true })
 vim.api.nvim_create_autocmd('FileType', {
   group = user_ft_group,
@@ -166,6 +178,10 @@ vim.api.nvim_create_autocmd('FileType', {
       buffer = args.buf,
       desc = 'User Logcat mapping',
     })
+    if override_session_mapping then vim.keymap.set('n', 'S', '<Nop>', {
+      buffer = args.buf,
+      desc = 'User Logcat session mapping',
+    }) end
   end,
 })
 
@@ -339,6 +355,7 @@ local ok, unexpected = xpcall(function()
   local log_win = vim.fn.bufwinid(bufnr)
   local winbar = log_win ~= -1 and vim.wo[log_win].winbar or ''
   expect_true('Logcat controls remain visible in the window bar', winbar:find('[p] pause', 1, true) ~= nil)
+  expect_true('window bar advertises session switching', winbar:find('[S] sessions', 1, true) ~= nil)
   expect_true('window bar advertises shortcut help', winbar:find('[?] shortcuts', 1, true) ~= nil)
   expect_true('window bar truncates identity before controls', winbar:find('%<', 1, true) ~= nil)
   expect_true('window bar retains application identity', winbar:find('com.example.app', 1, true) ~= nil)
@@ -350,12 +367,20 @@ local ok, unexpected = xpcall(function()
 
   local help_mapping = buffer_mapping(bufnr, '?')
   expect('Logcat help mapping is discoverable', help_mapping and help_mapping.desc, 'Show Logcat shortcuts')
+  local session_mapping = buffer_mapping(bufnr, 'S')
+  expect('Logcat session mapping is discoverable', session_mapping and session_mapping.desc, 'Select Logcat session')
+  if session_mapping then
+    press(bufnr, 'S')
+    expect('session mapping invokes the owned selector once', #session_selection_calls, 1)
+    session_selection_calls[1].callback(nil, nil)
+  end
   if help_mapping then
     press(bufnr, '?')
     local help_win = vim.api.nvim_get_current_win()
     local help_bufnr = vim.api.nvim_win_get_buf(help_win)
     expect_true('shortcut help opens in a floating window', vim.api.nvim_win_get_config(help_win).relative ~= '')
     expect_true('shortcut help lists pause', contains_line(buffer_lines(help_bufnr), ' p       Pause or resume rendering'))
+    expect_true('shortcut help lists session switching', contains_line(buffer_lines(help_bufnr), ' S       Select another Logcat session'))
     expect_true('shortcut help shows current level', contains_line(buffer_lines(help_bufnr), ' level≥VERBOSE · tag=* · text=* · follow=on'))
     press(help_bufnr, 'q')
     expect_false('shortcut help closes locally', vim.api.nvim_win_is_valid(help_win))
@@ -648,12 +673,21 @@ local ok, unexpected = xpcall(function()
   end
   local unrelated_partial = '2026-08-10 12:40:00.002 801 802 I OtherApp: unterminated'
   output { stream = 'stdout', data = wire_line(20202, unrelated_partial) }
+  press(bufnr, 'S')
+  local stopping_session_selection = session_selection_calls[#session_selection_calls]
+  expect('session picker remains active until stop', #session_selection_calls, 2)
   expect('first stop request succeeds', handle:stop(), true)
+  expect('stop cancels the active session picker', stopping_session_selection and stopping_session_selection.cancellations, 1)
+  press(bufnr, 'S')
+  expect('stopping stream cannot reopen session selection', #session_selection_calls, 2)
   if help_win_before_stop then expect_false('stopping Logcat closes shortcut help', vim.api.nvim_win_is_valid(help_win_before_stop)) end
   expect('duplicate stop request is ignored', handle:stop(), false)
   expect('stop cancels the stream once', runner.calls[2].cancellations, 1)
   expect('stop cancels an active package identity refresh', active_refresh and active_refresh.cancellations, 1)
   runner.calls[2].callback(nil, { status = 'cancelled' })
+  if stopping_session_selection then stopping_session_selection.callback(nil, { application_id = 'late' }) end
+  press(bufnr, 'S')
+  expect('late session picker callback cannot reopen selection', #session_selection_calls, 2)
   expect('cancelled stream reports a normal stop', exits[1] and exits[1].status, 'stopped')
   expect_false('stream exit cannot retain another package partial record', contains_line(buffer_lines(bufnr), unrelated_partial))
   if active_refresh then active_refresh.callback(nil, { status = 'success', stdout = 'package:com.example.app uid:10103\n' }) end
@@ -700,9 +734,12 @@ local ok, unexpected = xpcall(function()
   local windows_before_switch = #vim.api.nvim_list_wins()
   local second_request = request(function(result) dock_exits[#dock_exits + 1] = { session = 'second', result = result } end)
   second_request.application_id = 'com.example.second'
+  override_session_mapping = true
   local second_handle = dock_native.start(second_request)
+  override_session_mapping = false
   local second_bufnr = second_handle:status().bufnr
   buffers_to_delete[#buffers_to_delete + 1] = second_bufnr
+  expect('user ftplugin can override the native session mapping', buffer_mapping(second_bufnr, 'S').desc, 'User Logcat session mapping')
   expect('another native handle reuses the owned Logcat dock', vim.fn.bufwinid(second_bufnr), dock_win)
   expect('switching native handles opens no additional window', #vim.api.nvim_list_wins(), windows_before_switch)
   expect('switching hides the previous native buffer', vim.fn.bufwinid(first_bufnr), -1)
@@ -735,6 +772,7 @@ local ok, unexpected = xpcall(function()
   expect('non-focused show still reuses the owned dock', vim.fn.bufwinid(second_bufnr), dock_win)
   expect_true('non-focused show restores the selected session', vim.wait(1000, function() return second_handle:status().storage == 'memory' end, 10))
   expect_true('narrow dock retains its shortcut controls', vim.wo[dock_win].winbar:find('[?] shortcuts', 1, true) ~= nil)
+  expect_true('narrow dock retains session switching', vim.wo[dock_win].winbar:find('[S] sessions', 1, true) ~= nil)
   local second_frame_row = line_index(buffer_lines(second_bufnr), second_frame)
   expect_true('switched session retains its source frame', second_frame_row ~= nil)
   if second_frame_row then
@@ -908,11 +946,26 @@ local ok, unexpected = xpcall(function()
 
   local synchronous_second_request = request(function(result) synchronous_exits[#synchronous_exits + 1] = result end)
   synchronous_second_request.application_id = 'com.example.synchronous'
+  local synchronous_session_selections = 0
+  local synchronous_session_cancellations = 0
+  synchronous_second_request.select_logcat_session = function(callback)
+    synchronous_session_selections = synchronous_session_selections + 1
+    callback(nil, { application_id = 'com.example.synchronous', device_serial = device_serial, current = true })
+    return {
+      cancel = function()
+        synchronous_session_cancellations = synchronous_session_cancellations + 1
+        return true
+      end,
+    }
+  end
   local synchronous_second_handle = synchronous_native.start(synchronous_second_request)
   local synchronous_second_bufnr = synchronous_second_handle:status().bufnr
   buffers_to_delete[#buffers_to_delete + 1] = synchronous_second_bufnr
   expect('second synchronous UID resolution starts its stream', #synchronous_calls, 4)
   expect('second completed UID query handle is discarded', synchronous_calls[3].cancellations, 1)
+  press(synchronous_second_bufnr, 'S')
+  expect('synchronous session selector completes once', synchronous_session_selections, 1)
+  expect('synchronous session selector handle is discarded', synchronous_session_cancellations, 1)
   expect('synchronous native handles share the exact dock', vim.fn.bufwinid(synchronous_second_bufnr), synchronous_dock_win)
   expect('synchronous dock switch hides the previous handle', synchronous_handle:status().storage, 'disk')
   expect('synchronous Logcat stop succeeds', synchronous_handle:stop(), true)
