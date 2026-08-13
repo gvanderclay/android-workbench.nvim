@@ -4,6 +4,8 @@ This file records user-visible Android Workbench changes.
 
 ## Unreleased
 
+## 0.3.0 - 2026-08-12
+
 ### Added
 
 - A project-local emulator manager that lists every installed AVD with its

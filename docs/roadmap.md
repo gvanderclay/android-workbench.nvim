@@ -3,11 +3,11 @@
 ## Current state
 
 Android Workbench is now a standalone Neovim plugin with `v0.1.0` and `v0.2.0`
-published as GitHub prereleases. Multi-session Logcat and normal-exit shutdown
-shipped in the bounded `v0.2.0` release. The runtime layout, bundled Gradle
-provider, command entry, vimdoc, focused contracts, clean package smoke, and CI
-definition were extracted without changing the module namespace, `:Android`
-grammar, or state location.
+published as GitHub prereleases. The project-local emulator manager, Cold Boot,
+and shutdown-containment fixes are complete as the bounded `v0.3.0` feature
+candidate. The runtime layout, bundled Gradle provider, command entry, vimdoc,
+focused contracts, clean package smoke, and CI definition were extracted
+without changing the module namespace, `:Android` grammar, or state location.
 
 This is an MIT-licensed plugin. The completed work below is ordered by user
 impact and correctness rather than feature count.
@@ -307,6 +307,50 @@ facade and buffer-local mapping. The exact-source Android consumer smoke,
 isolated Neovim startup, full Kotlin coexistence suite, Stow simulation, and
 diff validation passed without changing the installed package checkout or the
 owner's unrelated Zen edit.
+
+## R7 — `v0.3.0` release
+
+Release `v0.3.0` contains only the completed R6 emulator manager, native Cold
+Boot, and the irreversible shutdown fixes that preceded it. It does not include
+the separate retained-Logcat-handle synchronization follow-up, widen platform
+or adapter support, publish to a plugin registry, or add release automation.
+
+### R7.1 Candidate boundary
+
+- [x] Assign the accepted changes to the `0.3.0` changelog section and keep an
+  empty `Unreleased` section for later work.
+- [x] Freeze the release boundary to R6 plus the two shutdown-containment fixes.
+- [x] Confirm no runtime file differs after exact reviewed candidate `fb5f283`;
+  otherwise reopen the live emulator gate before release.
+
+### R7.2 Standalone candidate verification
+
+- [ ] Run all standalone contracts, package smokes, formatting, help-tag, and
+  diff checks on the exact candidate.
+- [ ] Run the real Gradle/AGP and pinned optional-adapter integration gates and
+  ShellCheck their harnesses.
+- [ ] Verify the candidate from a clean checkout with no ignored local support
+  files.
+
+### R7.3 Consumer and remote verification
+
+- [ ] From the latest committed sibling-consumer revision, pin the exact
+  release candidate in a disposable worktree and run its Android Workbench
+  smoke and full headless startup without changing the live installed checkout.
+- [ ] Push the approved candidate and require its Linux and macOS CI jobs to
+  pass on the exact commit.
+
+### R7.4 Publication
+
+- [ ] With explicit owner approval, create and push annotated tag `v0.3.0` on
+  the exact verified candidate.
+- [ ] Publish a public, non-draft GitHub prerelease from that verified tag using
+  curated notes derived from the `0.3.0` changelog section.
+
+### R7.5 Post-release record
+
+- [ ] Record the exact tag commit, CI run, consumer result, and GitHub release
+  URL after publication; keep the real dotfiles lock update separate.
 
 ## Deferred until demonstrated demand
 
