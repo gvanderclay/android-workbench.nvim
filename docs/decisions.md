@@ -24,8 +24,9 @@ vimdoc and tests.
 - **Rationale:** Existing plugins either own a broader IDE surface or do not
   expose the trusted composite-build model required here. A task runner can own
   task lifecycle and presentation but does not supply the Android/Gradle domain
-  model. Explicit adapters let a consumer choose Telescope or Overseer without
-  leaking them into core behavior.
+  model. Explicit adapters let a consumer choose Snacks or Telescope for
+  picking and Overseer for task presentation without leaking them into core
+  behavior.
 - **Tradeoffs:** Workbench carries more code and has less public adoption and
   release maturity than established plugins. Its adapter contracts must remain
   deliberately small and well tested.

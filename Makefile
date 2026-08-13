@@ -17,7 +17,7 @@ CONTRACT_TESTS := \
 	android-workbench-logcat.lua \
 	android-workbench-logcat-sessions.lua
 
-CONTRACT_TESTS += android-workbench-telescope.lua
+CONTRACT_TESTS += android-workbench-telescope.lua android-workbench-snacks.lua
 
 .DEFAULT_GOAL := test
 

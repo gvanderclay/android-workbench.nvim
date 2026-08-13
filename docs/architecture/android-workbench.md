@@ -93,8 +93,8 @@ private selection state. They still must not authorize project code, discover a
 model, query ADB, enumerate AVDs, or start a task.
 
 Consumer-specific adapter selection and buffer-local mappings live outside this
-repository. Telescope/Overseer examples are configuration recipes, not default
-dependency direction.
+repository. Snacks/Telescope/Overseer examples are configuration recipes, not
+default dependency direction.
 
 ## Dependency map
 
@@ -121,7 +121,7 @@ consumer configuration -> optional adapters -> public ports
 
 This is a responsibility map, not a requirement that every box become a file.
 Domain and lifecycle modules must not require a consuming configuration,
-Telescope, Overseer, Trouble, or another optional presenter.
+Snacks, Telescope, Overseer, Trouble, or another optional presenter.
 
 ## Owners
 
@@ -352,7 +352,7 @@ policy.
 
 Optional modules must defer their external `require()` calls until their
 adapter is selected or invoked. Package startup and native defaults do not load
-Telescope, Overseer, Trouble, WhichKey, or language tooling.
+Snacks, Telescope, Overseer, Trouble, WhichKey, or language tooling.
 
 ## Port contracts
 
@@ -527,6 +527,9 @@ The standalone contract suites are organized by owner:
 - [`android-workbench-telescope.lua`](../../tests/android-workbench-telescope.lua):
   selection, cancellation, prompt wipeout, and exactly-once completion for the
   optional picker adapter.
+- [`android-workbench-snacks.lua`](../../tests/android-workbench-snacks.lua):
+  formatted selection, current-item positioning, cancellation, dismissal, and
+  exactly-once completion for the optional picker adapter.
 
 `tests/package-smoke.lua` separately verifies ordinary clean plugin loading,
 `:Android`, setup/App laziness, no package-defined mappings or eager optional
@@ -539,8 +542,8 @@ release gates.
 shipped provider and public facade from disposable floor/current Android
 projects, including configuration-cache replay, composite identity, exact task
 execution, and APK assembly. `tests/integration/adapters/` loads pinned real
-Telescope and Overseer revisions. Neither integration lane is part of the fast
-or offline `make test` target.
+Snacks, Telescope, and Overseer revisions. Neither integration lane is part of
+the fast or offline `make test` target.
 
 `tests/fixtures/port_contracts.lua` defines the shared closed field sets for
 every supported replacement port. Focused owner suites apply those fixtures to

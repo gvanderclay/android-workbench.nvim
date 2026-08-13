@@ -38,6 +38,13 @@ resolve_plugin \
 telescope_path=$resolved_plugin
 
 resolve_plugin \
+  snacks \
+  "${AWB_SNACKS_PATH:-$HOME/.local/share/nvim/site/pack/core/opt/snacks.nvim}" \
+  https://github.com/folke/snacks.nvim.git \
+  882c996cf28183f4d63640de0b4c02ec886d01f2
+snacks_path=$resolved_plugin
+
+resolve_plugin \
   plenary \
   "${AWB_PLENARY_PATH:-$HOME/.local/share/nvim/site/pack/core/opt/plenary.nvim}" \
   https://github.com/nvim-lua/plenary.nvim.git \
@@ -58,6 +65,7 @@ env \
   ANDROID_WORKBENCH_TEST_ROOT="$checkout" \
   AWB_OVERSEER_PATH="$overseer_path" \
   AWB_PLENARY_PATH="$plenary_path" \
+  AWB_SNACKS_PATH="$snacks_path" \
   AWB_TELESCOPE_PATH="$telescope_path" \
   NVIM_APPNAME=android-workbench-integration \
   XDG_CACHE_HOME="$xdg_root/cache" \

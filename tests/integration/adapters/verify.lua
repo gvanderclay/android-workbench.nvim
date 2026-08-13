@@ -1,5 +1,6 @@
 for _, path in ipairs {
   assert(vim.env.AWB_PLENARY_PATH),
+  assert(vim.env.AWB_SNACKS_PATH),
   assert(vim.env.AWB_TELESCOPE_PATH),
   assert(vim.env.AWB_OVERSEER_PATH),
 } do
@@ -32,6 +33,36 @@ local ok, err = xpcall(function()
     return handle
   end)
   assert(telescope_result.id == 'second', 'Telescope did not honor the current selection')
+
+  local snacks = require 'snacks'
+  snacks.setup { picker = {} }
+  local snacks_items = { { id = 'first' }, { id = 'second' } }
+  local snacks_adapter = require('android_workbench.integrations.snacks').new()
+  local snacks_result, snacks_handle = await('Snacks selection', function(done)
+    local handle = snacks_adapter.select({
+      prompt = 'Android Workbench Snacks adapter smoke',
+      items = snacks_items,
+      current = { id = 'second' },
+      format_item = function(item) return item.id end,
+    }, done)
+    vim.schedule(function()
+      local active
+      assert(
+        vim.wait(5000, function()
+          local pickers = snacks.picker.get()
+          active = pickers[#pickers]
+          return active ~= nil and active:current() ~= nil
+        end, 10),
+        'Snacks picker did not populate'
+      )
+      assert(active.title == 'Android Workbench Snacks adapter smoke', 'Snacks did not receive the prompt')
+      assert(active:current().text:find('● second', 1, true), 'Snacks did not format or select the current item')
+      active:action 'confirm'
+    end)
+    return handle
+  end)
+  assert(rawequal(snacks_result, snacks_items[2]), 'Snacks did not return the original current item')
+  assert(snacks_handle:cancel() == false, 'completed Snacks picker remained cancellable')
 
   local overseer = require 'overseer'
   overseer.setup { dap = false }

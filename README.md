@@ -19,7 +19,7 @@ Workbench handles Android and Gradle workflows. Kotlin and Java language
 support, formatting, test frameworks, and debugging remain outside its scope.
 
 It includes native pickers, task output, quickfix integration, emulator
-management, and Logcat. Optional Telescope, Overseer, and diagnostic
+management, and Logcat. Optional Snacks, Telescope, Overseer, and diagnostic
 integrations are configured separately. Workbench does not define global
 mappings, override `vim.ui.select`, or configure Trouble.
 
@@ -139,15 +139,16 @@ This setup replaces only the picker and Gradle runner:
 ```lua
 require('android_workbench').setup {
   ports = {
-    picker = require('android_workbench.integrations.telescope').new(),
+    picker = require('android_workbench.integrations.snacks').new(),
     runner = require('android_workbench.integrations.overseer').new(),
   },
 }
 ```
 
 Each integration is optional. Omitted ports keep their native behavior, and
-Workbench loads Telescope or Overseer only when you select that integration.
-The diagnostic projection and adapter contracts are documented in
+Workbench loads Snacks, Telescope, or Overseer only when you select that
+integration. Snacks must be installed with its picker enabled. The diagnostic
+projection and adapter contracts are documented in
 `:help android-workbench-adapters`.
 
 ## Help

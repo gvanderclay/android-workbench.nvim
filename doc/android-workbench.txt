@@ -129,16 +129,19 @@ buffer-local controls. A consuming configuration may add mappings with native
 <
 OPTIONAL INTEGRATIONS
 
-Telescope and Overseer can replace the native picker and runner independently.
-This does not change |vim.ui.select()| globally: >lua
+Snacks or Telescope can replace the native picker, and Overseer can replace the
+native runner. This does not change |vim.ui.select()| globally: >lua
 
   require('android_workbench').setup({
     ports = {
-      picker = require('android_workbench.integrations.telescope').new(),
+      picker = require('android_workbench.integrations.snacks').new(),
       runner = require('android_workbench.integrations.overseer').new(),
     },
   })
 <
+The Snacks picker must be enabled in Snacks' own setup. To use Telescope
+instead, construct `android_workbench.integrations.telescope` for `picker`.
+
 Overseer opens a non-focused output dock when a task starts,
 preserves unseen failed output, and disposes successful output on its normal
 timer. Pass `components` to the Overseer adapter constructor to choose a
@@ -734,6 +737,7 @@ pre-1.0 entry points because their constructors are documented in Setup:
   android_workbench.android.emulator
   android_workbench.gradle.discovery
   android_workbench.logcat.native
+  android_workbench.integrations.snacks
   android_workbench.integrations.telescope
   android_workbench.integrations.overseer
   android_workbench.integrations.quickfix

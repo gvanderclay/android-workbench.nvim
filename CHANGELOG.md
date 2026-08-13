@@ -4,6 +4,12 @@ This file records user-visible Android Workbench changes.
 
 ## Unreleased
 
+### Added
+
+- An explicit opt-in Snacks picker adapter with current-item selection,
+  original-item results, quiet dismissal, and cancellable exactly-once
+  completion.
+
 ## 0.3.0 - 2026-08-12
 
 ### Added

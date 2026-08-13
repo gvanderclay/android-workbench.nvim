@@ -33,6 +33,7 @@ local ok, unexpected = xpcall(function()
   unloaded 'android_workbench.android.adb'
   unloaded 'android_workbench.android.emulator'
   unloaded 'android_workbench.gradle.discovery'
+  unloaded 'android_workbench.integrations.snacks'
   unloaded 'android_workbench.integrations.telescope'
   unloaded 'android_workbench.integrations.overseer'
   unloaded 'trouble'
@@ -48,6 +49,7 @@ local ok, unexpected = xpcall(function()
   unloaded 'android_workbench.app'
   unloaded 'android_workbench.android.adb'
   unloaded 'android_workbench.gradle.discovery'
+  unloaded 'android_workbench.integrations.snacks'
   unloaded 'android_workbench.integrations.telescope'
   unloaded 'android_workbench.integrations.overseer'
 
@@ -71,6 +73,7 @@ local ok, unexpected = xpcall(function()
   expect('Android Workbench health runs', health_ok, true)
   if not health_ok then fail('Android Workbench health error', tostring(health_err)) end
   expect('health does not construct the application', package.loaded['android_workbench.app'], nil)
+  unloaded 'android_workbench.integrations.snacks'
   unloaded 'android_workbench.integrations.telescope'
   unloaded 'android_workbench.integrations.overseer'
   unloaded 'trouble'

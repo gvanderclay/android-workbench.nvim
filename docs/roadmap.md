@@ -39,8 +39,8 @@ Before a tag is published:
   from the release commit on every claimed CI platform.
 - Changes to Gradle discovery, its protocol, or compatibility claims require
   the real Gradle and Android Gradle Plugin fixture.
-- Changes to optional integrations require the pinned Telescope and Overseer
-  checks.
+- Changes to optional integrations require the pinned Snacks, Telescope, and
+  Overseer checks.
 - Changes to device, emulator, or Logcat lifecycle behavior require the
   relevant live Android workflow when isolated tests cannot establish the
   result.

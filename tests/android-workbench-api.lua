@@ -416,6 +416,7 @@ local ok, unexpected = xpcall(function()
     expect(('library defines no <leader>i%s mapping'):format(suffix), next(vim.fn.maparg('<leader>i' .. suffix, 'n', false, true)), nil)
   end
   expect('library leaves the Android prefix unmapped', next(vim.fn.maparg('<leader>i', 'n', false, true)), nil)
+  expect('Snacks adapter stays lazy by default', package.loaded['android_workbench.integrations.snacks'], nil)
   expect('Telescope adapter stays lazy by default', package.loaded['android_workbench.integrations.telescope'], nil)
   expect('Overseer adapter stays lazy by default', package.loaded['android_workbench.integrations.overseer'], nil)
   expect('diagnostic presenter stays opt-in', package.loaded['android_workbench.integrations.diagnostics'], nil)
