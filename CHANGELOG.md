@@ -4,6 +4,8 @@ This file records user-visible Android Workbench changes.
 
 ## Unreleased
 
+## 0.2.0 - 2026-08-12
+
 ### Added
 
 - Private bounded temporary storage for hidden native Logcat history, with

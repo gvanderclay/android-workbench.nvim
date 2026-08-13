@@ -7,9 +7,9 @@ coordinates build, install, launch, stop, emulator, Gradle-task, build-problem,
 and Logcat workflows.
 
 > [!IMPORTANT]
-> The latest tagged release is `v0.1.0`. Android Workbench has not been
-> submitted to a plugin registry, and pre-1.0 APIs may still change under the
-> `0.x` policy below.
+> Pre-1.0 tags are published as GitHub prereleases. Android Workbench has not
+> been submitted to a plugin registry, and pre-1.0 APIs may still change under
+> the `0.x` policy below.
 
 ## Design boundary
 
@@ -34,8 +34,8 @@ behind the current shape live in [the decision record](docs/decisions.md).
 - Exact Build, Run, application Stop, and arbitrary registered Gradle-task
   execution without shell-composed commands.
 - AVD discovery plus bounded emulator start/readiness and exact emulator stop.
-- App-scoped native Logcat with pause, follow, filtering, clearing, and source
-  navigation.
+- Independent app/device Logcat sessions with retained hidden history, session
+  switching, pause, follow, filtering, clearing, and source navigation.
 - Bounded Kotlin, Java, Android Lint, AAPT, and AGP problem parsing with a
   root-owned quickfix sink and an optional diagnostic projection.
 - A configuration-only `setup()` and a lazy `:Android` command surface.
@@ -118,7 +118,7 @@ Run `:Android` for the contextual action menu. The command also accepts:
 - `target app`, `target variant`, and `target device`
 - `emulator start` and `emulator stop`
 - `build`, `run`, `stop`, `gradle`, and `output`
-- `logcat`, `logcat stop`, and `cancel`
+- `logcat`, `logcat sessions`, `logcat stop`, `logcat stop all`, and `cancel`
 
 Use `:help android-workbench` for the complete command and configuration
 reference, and `:checkhealth android_workbench` for local prerequisites.
@@ -164,11 +164,12 @@ and recorded results.
 
 ## Release status
 
-`v0.1.0` is the first tagged pre-1.0 release. Its runtime, API, licensing, CI,
-real Gradle/AGP, optional-adapter, and daily-use checks are recorded in the
+`v0.1.0` is the first tagged pre-1.0 release. Tagged releases and their notes
+are published on GitHub. Their runtime, API, licensing, CI, real Gradle/AGP,
+optional-adapter, and daily-use checks are recorded in the
 [release-evidence ledger](docs/release-evidence.md). The plugin has not been
-submitted to a registry. Later user-visible changes remain under
-`Unreleased` in the [changelog](CHANGELOG.md) until another tag is published.
+submitted to a registry. Changes not yet assigned to a release remain under
+`Unreleased` in the [changelog](CHANGELOG.md).
 
 ## 0.x change policy
 
