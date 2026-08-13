@@ -298,8 +298,15 @@ AVD to its stopped state.
 
 ### R6.3 Consumer cutover
 
-- [ ] Pin the exact reviewed package commit in the sibling dotfiles consumer,
+- [x] Pin the exact reviewed package commit in the sibling dotfiles consumer,
   map `<Leader>ie` to the manager, and run its Android and startup smokes.
+
+Consumer evidence on 2026-08-12: dotfiles commit `5d85732` pins exact runtime
+candidate `fb5f283`, maps `<Leader>ie` to the manager, and asserts the public
+facade and buffer-local mapping. The exact-source Android consumer smoke,
+isolated Neovim startup, full Kotlin coexistence suite, Stow simulation, and
+diff validation passed without changing the installed package checkout or the
+owner's unrelated Zen edit.
 
 ## Deferred until demonstrated demand
 
