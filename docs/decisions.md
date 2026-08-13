@@ -532,6 +532,33 @@ vimdoc and tests.
   supported embedding host needs a distinct teardown contract, or measured
   cleanup failures need user-visible reporting before exit.
 
+## AN017 — Publish tagged 0.x versions as ordinary GitHub releases
+
+- **Status:** Accepted
+- **Decision:** Starting with `v0.3.0`, publish tagged `0.x` versions as public,
+  non-draft GitHub releases rather than marking them as GitHub prereleases.
+  Continue to use semantic version `0.x` and the documented compatibility
+  policy to communicate that the public surface may change before 1.0.
+- **Requirements:** Complete the same exact-candidate standalone, integration,
+  consumer, CI, annotated-tag, and evidence gates before publication. Do not
+  imply 1.0 stability, plugin-registry availability, or broader platform and
+  adapter support.
+- **Considered:** Keep every pre-1.0 tag marked as a GitHub prerelease, wait for
+  1.0 before publishing ordinary releases, or publish `v0.3.0` normally while
+  retaining the existing semantic compatibility signal.
+- **Rationale:** The repository now has repeatable release gates, Linux and
+  macOS CI, real Gradle/AGP and optional-adapter checks, live Android evidence,
+  and an exact pinned consumer. The GitHub prerelease flag no longer adds a
+  useful warning beyond the explicit `0.x` policy.
+- **Tradeoffs:** GitHub may present the newest `0.x` tag more prominently even
+  though compatibility can still change before 1.0. README and release notes
+  must keep that limitation visible.
+- **Consequences:** `v0.1.0` and `v0.2.0` remain historical prereleases;
+  `v0.3.0` and later tagged versions are ordinary releases unless this decision
+  is revisited.
+- **Revisit when:** The compatibility policy changes, a plugin registry imposes
+  different publication semantics, or 1.0 stability gates are selected.
+
 ## Repository extraction status
 
 Moving the runtime into this repository does not change AN001–AN006. The module

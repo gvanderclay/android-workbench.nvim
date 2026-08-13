@@ -7,9 +7,9 @@ coordinates build, install, launch, stop, emulator, Gradle-task, build-problem,
 and Logcat workflows.
 
 > [!IMPORTANT]
-> Pre-1.0 tags are published as GitHub prereleases. Android Workbench has not
-> been submitted to a plugin registry, and pre-1.0 APIs may still change under
-> the `0.x` policy below.
+> Android Workbench remains pre-1.0. Starting with `v0.3.0`, tagged versions are
+> ordinary GitHub releases, but APIs may still change under the `0.x` policy
+> below. The plugin has not been submitted to a plugin registry.
 
 ## Design boundary
 

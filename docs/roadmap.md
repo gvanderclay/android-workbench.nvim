@@ -3,11 +3,14 @@
 ## Current state
 
 Android Workbench is now a standalone Neovim plugin with `v0.1.0` and `v0.2.0`
-published as GitHub prereleases. The project-local emulator manager, Cold Boot,
-and shutdown-containment fixes are complete as the bounded `v0.3.0` feature
-candidate. The runtime layout, bundled Gradle provider, command entry, vimdoc,
-focused contracts, clean package smoke, and CI definition were extracted
-without changing the module namespace, `:Android` grammar, or state location.
+published as GitHub prereleases. Starting with `v0.3.0`, tagged versions use
+ordinary GitHub releases while semantic version `0.x` continues to communicate
+the pre-1.0 compatibility policy. The project-local emulator manager, Cold
+Boot, and shutdown-containment fixes are complete as the bounded `v0.3.0`
+feature candidate. The runtime layout, bundled Gradle provider, command entry,
+vimdoc, focused contracts, clean package smoke, and CI definition were
+extracted without changing the module namespace, `:Android` grammar, or state
+location.
 
 This is an MIT-licensed plugin. The completed work below is ordered by user
 impact and correctness rather than feature count.
@@ -322,6 +325,8 @@ or adapter support, publish to a plugin registry, or add release automation.
 - [x] Freeze the release boundary to R6 plus the two shutdown-containment fixes.
 - [x] Confirm no runtime file differs after exact reviewed candidate `fb5f283`;
   otherwise reopen the live emulator gate before release.
+- [x] Publish tagged `0.x` versions as ordinary GitHub releases while retaining
+  the documented pre-1.0 compatibility policy.
 
 ### R7.2 Standalone candidate verification
 
@@ -344,7 +349,7 @@ or adapter support, publish to a plugin registry, or add release automation.
 
 - [ ] With explicit owner approval, create and push annotated tag `v0.3.0` on
   the exact verified candidate.
-- [ ] Publish a public, non-draft GitHub prerelease from that verified tag using
+- [ ] Publish a public, non-draft GitHub release from that verified tag using
   curated notes derived from the `0.3.0` changelog section.
 
 ### R7.5 Post-release record
