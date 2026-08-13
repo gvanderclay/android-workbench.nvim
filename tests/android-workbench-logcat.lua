@@ -95,6 +95,7 @@ end
 local Model = require 'android_workbench.logcat.model'
 local Native = require 'android_workbench.logcat.native'
 local Spool = require 'android_workbench.logcat.spool'
+local App = require 'android_workbench.app'
 
 local temporary_root = vim.fn.tempname()
 vim.fn.mkdir(temporary_root, 'p')
@@ -1004,6 +1005,71 @@ local ok, unexpected = xpcall(function()
   expect('refused stream can be stopped later', refusing_handle:stop(), true)
   refusing_runner.calls[2].callback(nil, { status = 'cancelled' })
   expect('refused stream eventually exits once', refusing_exits[1] and refusing_exits[1].status, 'stopped')
+
+  local abandon_runner = fake_runner()
+  local abandon_picker_callback
+  local abandon_picker_cancellations = 0
+  local abandon_picker = {
+    select = function(_, callback)
+      abandon_picker_callback = callback
+      return {
+        cancel = function()
+          abandon_picker_cancellations = abandon_picker_cancellations + 1
+          return false
+        end,
+      }
+    end,
+  }
+  local abandon_exits = {}
+  local abandon_native = Native.new {
+    runner = abandon_runner.adapter,
+    picker = abandon_picker,
+    schedule = immediate,
+    defer_fn = defer,
+    max_records = 4,
+    max_retained_bytes = 256,
+  }
+  local abandon_handle = abandon_native.start(request(function(result) abandon_exits[#abandon_exits + 1] = result end))
+  local abandon_bufnr = abandon_handle:status().bufnr
+  abandon_runner.calls[1].callback(nil, { status = 'success', stdout = 'package:com.example.app uid:30304\n' })
+  local abandon_output = abandon_runner.calls[2].request.on_output
+  abandon_output { stream = 'stdout', data = wire_line(30304, '2026-08-10 12:22:00.001 101 301 I Abandon: retained') .. '\n' }
+  press(abandon_bufnr, 'l')
+  expect_true('shutdown fixture opens a retained picker', abandon_picker_callback ~= nil)
+  local abandon_refresh_timer = timers[#timers]
+  vim.api.nvim_win_close(vim.fn.bufwinid(abandon_bufnr), false)
+  expect_true(
+    'shutdown fixture reaches private storage',
+    vim.wait(1000, function()
+      local abandon_status = abandon_handle:status()
+      return abandon_status.storage == 'disk' and abandon_status.spool_pending_bytes == 0 and abandon_status.spool_files > 0
+    end, 10)
+  )
+  abandon_runner.calls[2].handle.cancel = function() return false end
+  local abandon_app = App.new {
+    ports = {
+      logcat = abandon_native,
+      picker = abandon_picker,
+      runner = abandon_runner.adapter,
+    },
+  }
+  abandon_app.logcats[temporary_root] = { entries = { fixture = { handle = abandon_handle } } }
+  expect('native refusal shutdown succeeds', abandon_app:shutdown(), true)
+  expect('native refusal shutdown is terminal', abandon_handle:status().phase, 'stopped')
+  expect_false('native refusal shutdown deletes its buffer', vim.api.nvim_buf_is_valid(abandon_bufnr))
+  expect_true('native refusal shutdown closes UID refresh', abandon_refresh_timer.closing)
+  expect('native refusal shutdown cancels its picker', abandon_picker_cancellations, 1)
+  expect_true('native refusal shutdown closes private history', vim.wait(1000, function() return abandon_handle:status().spool_files == 0 end, 10))
+  local calls_after_abandon = #abandon_runner.calls
+  abandon_refresh_timer.callback()
+  expect('late UID refresh cannot start runner work', #abandon_runner.calls, calls_after_abandon)
+  abandon_picker_callback(nil, 'error')
+  expect('late picker callback cannot change filters', abandon_handle:status().filters.level, 'verbose')
+  abandon_output { stream = 'stdout', data = 'late abandon output\n' }
+  abandon_runner.calls[2].callback(nil, { status = 'cancelled' })
+  expect('abandoned stream never delivers its terminal', #abandon_exits, 0)
+  expect('abandoned stream retains no records', abandon_handle:status().records, 0)
+  expect_false('abandoned native handle cannot be shown', abandon_handle:show())
 
   local restart_runner = fake_runner()
   local restart_exits = {}

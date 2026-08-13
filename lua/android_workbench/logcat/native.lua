@@ -267,6 +267,7 @@ function M.new(opts)
         spool_failed = false,
         storage_generation = 0,
         discard_history = false,
+        abandoned = false,
       }
       local namespace = vim.api.nvim_create_namespace(
         'android-workbench-logcat-' .. vim.fn.sha256(request.root .. '\0' .. request.device_serial .. '\0' .. request.application_id)
@@ -655,6 +656,17 @@ function M.new(opts)
         end
       end
 
+      local function discard_private_history()
+        if state.discard_history then return false end
+        state.discard_history = true
+        cancel_handle(state.picker_handle)
+        state.picker_handle = nil
+        close_help()
+        cancel_session_picker()
+        close_private_history(true)
+        return true
+      end
+
       local function decode_history(entries)
         local records = {}
         for _, entry in ipairs(entries or {}) do
@@ -985,7 +997,7 @@ function M.new(opts)
           format_item = function(path) return relative_label(request.root, path) end,
         }, function(err, path)
           state.picker_handle = nil
-          if state.done then return end
+          if state.done or state.discard_history then return end
           if err then
             notify(notifications, 'error', tostring(type(err) == 'table' and (err.message or err.code) or err))
           elseif path then
@@ -1024,7 +1036,7 @@ function M.new(opts)
           format_item = function(level) return level:upper() end,
         }, function(err, level)
           state.picker_handle = nil
-          if state.done then return end
+          if state.done or state.discard_history then return end
           if err then
             notify(notifications, 'error', tostring(type(err) == 'table' and (err.message or err.code) or err))
           elseif level then
@@ -1043,7 +1055,7 @@ function M.new(opts)
         local current = state.filters[kind]
         local prompt = kind == 'tag' and 'Logcat tag contains: ' or 'Logcat message contains: '
         local ok, err = pcall(input, { prompt = prompt, default = current or '' }, function(value)
-          if state.done or value == nil then return end
+          if state.done or state.discard_history or value == nil then return end
           value = vim.trim(value)
           state.filters[kind] = value ~= '' and value or nil
           render()
@@ -1052,7 +1064,7 @@ function M.new(opts)
       end
 
       local function choose_session()
-        if state.done or state.stop_requested or state.session_picker_active then return end
+        if state.done or state.discard_history or state.stop_requested or state.session_picker_active then return end
         state.session_picker_generation = state.session_picker_generation + 1
         local token = state.session_picker_generation
         state.session_picker_active = true
@@ -1120,7 +1132,7 @@ function M.new(opts)
       end
 
       local function show_shortcuts()
-        if state.done then return end
+        if state.done or state.discard_history then return end
         if state.help_win and vim.api.nvim_win_is_valid(state.help_win) then
           vim.api.nvim_set_current_win(state.help_win)
           return
@@ -1249,8 +1261,8 @@ function M.new(opts)
               local ok, dock_bufnr = pcall(vim.api.nvim_win_get_buf, dock.win)
               if ok and dock_bufnr == args.buf then dock.win = nil end
             end
-            close_help()
-            handle:_abandon()
+            if state.bufnr == args.buf then state.bufnr = nil end
+            discard_private_history()
             handle:stop()
           end,
         })
@@ -1316,11 +1328,34 @@ function M.new(opts)
       end
 
       function handle:_abandon()
-        if state.discard_history then return false end
-        state.discard_history = true
-        close_help()
-        cancel_session_picker()
-        close_private_history(true)
+        if state.abandoned then return false end
+        state.abandoned = true
+        local cancellation_pending = state.stop_requested
+        state.done = true
+        state.stop_requested = true
+        state.phase = 'stopped'
+        state.child_generation = state.child_generation + 1
+        close_timer(state.timer)
+        state.timer = nil
+        local child = state.child
+        state.child = nil
+        if not cancellation_pending then cancel_handle(child) end
+        stop_uid_monitor()
+        discard_private_history()
+        state.partial = ''
+        state.previous = nil
+        state.pending_error = nil
+        local bufnr = state.bufnr
+        state.bufnr = nil
+        if bufnr then session_buffers[bufnr] = nil end
+        for _, winid in ipairs(buffer_windows(bufnr)) do
+          if #vim.api.nvim_list_wins() > 1 then pcall(vim.api.nvim_win_close, winid, true) end
+        end
+        if dock.win and vim.api.nvim_win_is_valid(dock.win) then
+          local ok, dock_bufnr = pcall(vim.api.nvim_win_get_buf, dock.win)
+          if ok and dock_bufnr == bufnr then dock.win = nil end
+        end
+        if bufnr and vim.api.nvim_buf_is_valid(bufnr) then pcall(vim.api.nvim_buf_delete, bufnr, { force = true }) end
         return true
       end
 

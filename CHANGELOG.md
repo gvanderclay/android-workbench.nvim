@@ -4,6 +4,11 @@ This file records user-visible Android Workbench changes.
 
 ## Unreleased
 
+### Fixed
+
+- Native Logcat shutdown now irreversibly closes its view, timers, pickers, and
+  private history even when the underlying reader refuses cancellation.
+
 ## 0.2.0 - 2026-08-12
 
 ### Added
