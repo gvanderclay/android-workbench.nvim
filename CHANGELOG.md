@@ -15,6 +15,8 @@ This file records user-visible Android Workbench changes.
 
 - Native Logcat shutdown now irreversibly closes its view, timers, pickers, and
   private history even when the underlying reader refuses cancellation.
+- Shutdown now prevents late device inventory callbacks from starting more ADB
+  or emulator work after cancellation is refused.
 
 ## 0.2.0 - 2026-08-12
 

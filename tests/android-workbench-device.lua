@@ -488,6 +488,43 @@ local ok, unexpected = xpcall(function()
   end
 
   do
+    local pending_devices
+    local device_cancels = 0
+    local avd_lists = 0
+    local completions = 0
+    local adb = {
+      list_devices = function(_, callback)
+        pending_devices = callback
+        return {
+          cancel = function()
+            device_cancels = device_cancels + 1
+            return false
+          end,
+        }
+      end,
+      validate_serial = function() error 'abandoned inventory must not validate a device' end,
+    }
+    local emulator = new_emulator {}
+    function emulator:list_avds(callback)
+      avd_lists = avd_lists + 1
+      callback(nil, {})
+      return noop_handle()
+    end
+    local device = Device.new { adb = adb, emulator = emulator, picker = new_picker(function() end) }
+    local handle = device:list_emulators(new_session(), function() completions = completions + 1 end)
+    expect_true('pending inventory exposes irreversible abandonment', type(handle._abandon) == 'function')
+    if type(handle._abandon) == 'function' then
+      handle:_abandon()
+    else
+      handle:cancel()
+    end
+    expect('inventory abandonment attempts refused leaf cancellation once', device_cancels, 1)
+    pending_devices(nil, {})
+    expect('late abandoned inventory does not list AVDs', avd_lists, 0)
+    expect('late abandoned inventory does not complete publicly', completions, 0)
+  end
+
+  do
     local session = new_session { avd_name = 'Pixel_8' }
     local start_callback
     local emulator = new_emulator {}
