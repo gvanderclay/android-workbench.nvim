@@ -17,7 +17,8 @@ owning Kotlin LSP, formatting, testing, DAP, autosave, or file watching.
 
 The current implementation supports trusted Gradle discovery, root-isolated
 state, persistent application/variant/device selection, AVD discovery and
-emulator start/stop, Gradle builds, install and launch, application stop,
+emulator management/start/Cold Boot/stop, Gradle builds, install and launch,
+application stop,
 cancellation, arbitrary registered Gradle tasks, navigable Gradle build errors,
 inspectable native task output, and app-scoped Logcat.
 
@@ -327,13 +328,16 @@ methods: >lua
 
   emulator:list_avds(done)
   emulator:start(avd_name, done)
+  emulator:cold_boot(avd_name, done) -- optional
   emulator:stop({ avd_name = avd_name, serial = serial }, done)
 <
 Completion callbacks use `(error, value)` and may run synchronously. Each method
 may return a cancellable handle while work remains. AVD list items contain an
-`avd_name` and optional presentation fields. Start returns the exact online
-device identity, including `serial`, `avd_name`, and `state`. Stop is always
-scoped to both the remembered AVD name and its current ADB serial.
+`avd_name` and optional presentation fields. Start and Cold Boot return the
+exact online device identity, including `serial`, `avd_name`, and `state`. Stop
+is always scoped to both the remembered AVD name and its current ADB serial.
+When `cold_boot()` is absent, the manager omits that action; the three required
+methods remain sufficient for a custom emulator adapter.
 
 By default, Run starts a remembered stopped AVD and waits for it to become
 ready without opening another picker. To require an explicit emulator start: >lua
@@ -365,7 +369,7 @@ not as a broad Workbench option: >lua
     ports = { adb = adb, emulator = emulator },
   })
 <
-A different command-line flag policy belongs in a custom emulator adapter.
+Any other command-line flag policy belongs in a custom emulator adapter.
 
 Logcat does not open automatically after Run unless requested: >lua
 
@@ -569,10 +573,13 @@ Successful action results guarantee these fields:
   run            `{ kind = 'run', target, device, component, task }`
   gradle_task    `{ kind = 'gradle_task', gradle_task, task }`
   stop           `{ kind = 'stop', target, device }`
-  manage_emulators `{ kind = 'emulator_start'|'emulator_stop', device }`
+  manage_emulators `{ kind, device }`
   start_emulator `{ kind = 'emulator_start', device }`
   stop_emulator  `{ kind = 'emulator_stop', device }`
   logcat         `{ kind = 'logcat', target, device, handle }`
+
+For `manage_emulators()`, `kind` is `emulator_start`,
+`emulator_cold_boot`, or `emulator_stop`.
 
 `select_logcat_session()` returns the selected root-local session: >lua
 
@@ -704,9 +711,13 @@ them, but reachability is not a support promise.
 :Android emulator
         List every installed AVD with its running or stopped state, then open
         a contextual action picker. A running AVD offers Stop; a stopped AVD
-        offers Start. The chosen action uses the same exact-identity,
-        readiness, timeout, and cancellation rules as the explicit commands
-        below. Managing an AVD does not change the project's selected device.
+        offers Start and, when supported by the emulator service, Cold Boot.
+        The native Cold Boot launches the stopped AVD with
+        `-no-snapshot-load`; it does not wipe user data. If the AVD became
+        running before the action starts, Cold Boot fails instead of adopting
+        it. Every action uses the same exact-identity, readiness, timeout, and
+        cancellation rules. Managing an AVD does not change the project's
+        selected device.
 
                                                      *:Android-emulator-start*
 :Android emulator start
@@ -793,12 +804,12 @@ them, but reachability is not a support promise.
 
 :Android cancel
         Cancel the active build, run, arbitrary Gradle task, application-stop,
-        emulator-manager, emulator-start, or emulator-stop workflow for the
-        current root. An accepted cancellation keeps the root's operation slot
-        occupied until its current child terminates. If an adapter refuses
-        cancellation, the workflow remains active and may still complete
-        normally. Process-backed adapters are expected to terminate their child
-        within a bounded grace period.
+        emulator-manager, emulator-start, emulator-cold-boot, or emulator-stop
+        workflow for the current root. An accepted cancellation keeps the
+        root's operation slot occupied until its current child terminates. If
+        an adapter refuses cancellation, the workflow remains active and may
+        still complete normally. Process-backed adapters are expected to
+        terminate their child within a bounded grace period.
 
 :Android logcat
         Start or reveal Logcat for the selected application and online device.
@@ -890,9 +901,10 @@ queries ADB, or enumerates AVDs.
 Android discovery and Gradle Build/Run/arbitrary-task execution evaluate
 project-owned build logic. The default trust adapter calls |vim.secure.read()|
 immediately before discovery and again immediately before actual Gradle
-execution. Device and AVD discovery plus emulator management/start/stop use
-only Android SDK/ADB tooling and never prompt for Gradle trust. Merely opening a
-project or requesting status does not prompt, query ADB, or enumerate AVDs.
+execution. Device and AVD discovery plus emulator management/start/Cold
+Boot/stop use only Android SDK/ADB tooling and never prompt for Gradle trust.
+Merely opening a project or requesting status does not prompt, query ADB, or
+enumerate AVDs.
 
 Discovery executes the project `gradlew` directly with a bundled, versioned
 init script. It uses argv rather than a shell, disables configuration-on-demand
@@ -913,9 +925,9 @@ yet.
 
 Selections are stored per canonical root under `stdpath('state')` with private
 directory/file permissions. Parallel worktrees therefore keep separate state.
-AVD creation, deletion, wiping, cold-boot controls, snapshot management, SDK
-installation, and an embedded emulator UI remain outside the plugin. Workbench
-also does not read Android Studio's selected-device or emulator state.
+AVD creation, deletion, wiping, other snapshot management, SDK installation,
+and an embedded emulator UI remain outside the plugin. Workbench also does not
+read Android Studio's selected-device or emulator state.
 
 Run `:checkhealth android_workbench` for local prerequisites. When the current
 directory is inside a wrapper project, health requires `gradlew` to be a regular

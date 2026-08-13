@@ -108,7 +108,7 @@ local instance
 ---@field device AndroidWorkbenchDeviceIdentity
 
 ---@class AndroidWorkbenchEmulatorResult
----@field kind 'emulator_start'|'emulator_stop'
+---@field kind 'emulator_start'|'emulator_cold_boot'|'emulator_stop'
 ---@field device AndroidWorkbenchDeviceIdentity
 
 ---@class AndroidWorkbenchLogcatResult

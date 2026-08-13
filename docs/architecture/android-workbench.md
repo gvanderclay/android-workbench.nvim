@@ -11,7 +11,7 @@ contracts. User-visible setup, commands, and controls belong in the
 
 Workbench owns the path from a canonical Gradle-wrapper root to a validated
 Android application/variant model, remembered target and device selection, AVD
-discovery and project-local emulator management/start/stop, exact
+discovery and project-local emulator management/start/Cold Boot/stop, exact
 build/install/launch/stop operations, names-only registered Gradle-task
 discovery and execution, accepted build problems, and application-scoped
 Logcat. It composes picker, runner,
@@ -56,9 +56,10 @@ The supported pre-1.0 facade exposes setup, a side-effect-free Gradle-root
 membership query, status and action discovery, model refresh, target selection,
 emulator management/start/stop, Build/Run/application Stop, arbitrary Gradle
 tasks, native task-output reopen, Logcat start/session selection/current
-stop/root-local stop-all, cancellation, and shutdown. `setup()` returns no internal
-configuration data. Notification fallback is owned by a private module rather
-than an accidental `_notify` facade member.
+stop/root-local stop-all, cancellation, and shutdown. The manager also offers
+Cold Boot when the emulator service exposes it; the native service does.
+`setup()` returns no internal configuration data. Notification fallback is
+owned by a private module rather than an accidental `_notify` facade member.
 
 Root-aware facade calls accept only `bufnr`, `path`, and `root` context fields.
 Invalid setup, context, callback, and target-kind inputs are programmer errors
@@ -132,11 +133,12 @@ ports, coordinates complete actions, and owns root-keyed Session,
 active-operation, and Logcat registries. Cross-component wiring belongs here.
 
 At most one Build, Run, application Stop, Gradle-task, emulator-manager,
-emulator-start, or emulator-stop workflow is active per root. Logcat has a
-separate root-keyed registry and may survive task completion. Each root retains independent live
-entries keyed by application ID and device serial, independently cancellable
-pending starts, and one current identity. Aggregate status is running when any
-entry is live, otherwise starting when any start is pending, otherwise stopped.
+emulator-start, emulator-cold-boot, or emulator-stop workflow is active per
+root. Logcat has a separate root-keyed registry and may survive task
+completion. Each root retains independent live entries keyed by application ID
+and device serial, independently cancellable pending starts, and one current
+identity. Aggregate status is running when any entry is live, otherwise
+starting when any start is pending, otherwise stopped.
 Session selection snapshots closed owned identity items, then revalidates the
 exact entry token after picker return and again after `show()`. Root-local
 stop-all attempts every snapshotted live entry, removes only accepted exact
@@ -212,15 +214,17 @@ complete snapshot before execution.
 
 `device.lua` owns unified physical-device, running-AVD, and stopped-AVD
 inventory; picker identity; remembered-device resolution; revision-safe
-persistence; and staged start/stop coordination. It does not execute raw SDK
-commands.
+persistence; and staged start/Cold Boot/stop coordination. It does not execute
+raw SDK commands.
 
 A running emulator is identified by both ADB serial and AVD name. A stopped AVD
 is identified by stable AVD name. Starting converges on that exact name and a
 final online identity. Stopping re-resolves the exact serial/name pair before a
 targeted kill and waits for disappearance or identity change. The emulator
 manager resolves picker results back to this inventory and performs its action
-without reading or changing the project's remembered device selection.
+without reading or changing the project's remembered device selection. Cold
+Boot is offered only for a stopped resource and only when the emulator service
+exposes the optional semantic capability.
 
 ### ADB and emulator
 
@@ -230,8 +234,10 @@ launch, and application stop.
 
 `android/emulator.lua` implements the native semantic emulator service. It
 lists installed AVDs, rejects ambiguous identities, adopts an existing exact
-instance, launches a stopped AVD through a detached process, waits for bounded
-ADB readiness, and verifies targeted stop through disappearance.
+instance for ordinary Start, launches a stopped AVD through a detached process,
+waits for bounded ADB readiness, and verifies targeted stop through
+disappearance. Cold Boot uses the same launch lifecycle with the additional
+direct `-no-snapshot-load` argument and rejects an already-running instance.
 
 An accepted cancellation, timeout, shutdown, or launch failure may terminate
 only a launcher process Workbench created and still owns. A ready or adopted
@@ -245,6 +251,10 @@ capabilities. Native Logcat conditionally uses private executable resolution.
 A custom ADB service that does not supply those native capabilities requires
 paired custom emulator or Logcat services; this conditional composition must
 remain explicit in public documentation.
+
+The experimental emulator port requires list, Start, and Stop. Its optional
+Cold Boot method is an explicit capability: when absent, App omits the action
+rather than guessing adapter behavior.
 
 ### Execution and task operation
 
@@ -493,7 +503,7 @@ The standalone contract suites are organized by owner:
 - [`android-workbench-state.lua`](../../tests/android-workbench-state.lua):
   validation, root isolation, privacy, and atomic replacement.
 - [`android-workbench-device.lua`](../../tests/android-workbench-device.lua):
-  unified inventory, identity, selection, start/stop staging, and races.
+  unified inventory, identity, selection, lifecycle staging, and races.
 - [`android-workbench-discovery.lua`](../../tests/android-workbench-discovery.lua):
   provider argv, protocol bounds, cancellation, timeout, and metadata.
 - [`android-workbench-model.lua`](../../tests/android-workbench-model.lua): exact

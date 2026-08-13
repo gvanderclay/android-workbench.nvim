@@ -74,15 +74,17 @@ vimdoc and tests.
 - **Decision:** Represent a stopped AVD as `{ avd_name }` and a running emulator
   as `{ avd_name, serial }`. Keep unified physical/running-AVD/stopped-AVD
   inventory and revision-safe selection in the device coordinator. Put
-  list/start-to-ready/exact-stop behavior behind a semantic emulator port while
-  raw ADB parsing remains in the ADB service.
+  list/start-to-ready/Cold-Boot/exact-stop behavior behind a semantic emulator
+  port while raw ADB parsing remains in the ADB service.
 - **Requirements:** Use direct argv with the classic emulator and ADB tools.
   Revalidate serial plus AVD name, reject ambiguous duplicates, use bounded boot
   readiness, and wait for stop disappearance. Cancellation may terminate only a
   launcher process Workbench created and still owns. Ready, adopted, and
   pre-existing emulators outlive the operation and Neovim. Resolve emulator
   manager choices against the offered inventory and do not change project
-  target selection as a side effect.
+  target selection as a side effect. Cold Boot is valid only for a stopped AVD,
+  skips snapshot loading without wiping data, and otherwise uses the ordinary
+  start lifecycle.
 - **Considered:** Routing the long-lived emulator through the Gradle runner or
   Overseer, exposing a generic process port, using an emerging Android CLI as
   the default, importing Android Studio state, separate ADB/AVD action hubs, and
@@ -95,14 +97,15 @@ vimdoc and tests.
   instances with console-port serials. Its in-process same-name guard cannot be
   atomic across separate Neovim processes, so a final live identity scan remains
   authoritative. A custom ADB service may need a paired custom emulator service
-  for native AVD workflows.
+  for native AVD workflows. Cold Boot is an optional experimental emulator-port
+  method so existing custom adapters remain usable without advertising it.
 - **Consequences:** Device selection presents one neutral inventory. Run may
   start a remembered stopped AVD by explicit configuration; application Stop
   and Logcat never do. The project-local emulator manager presents the AVD-only
-  subset and offers Start for stopped AVDs or Stop for running AVDs without
-  selecting them. AVD creation, deletion, wiping, cold boot, snapshots, SDK
-  installation, Android Studio state, and an embedded emulator remain outside
-  scope.
+  subset and offers Start plus optional Cold Boot for stopped AVDs or Stop for
+  running AVDs without selecting them. AVD creation, deletion, wiping, other
+  snapshot controls, SDK installation, Android Studio state, and an embedded
+  emulator remain outside scope.
 - **Revisit when:** A second mature emulator backend needs different semantics,
   a cross-process duplicate problem becomes observable, or a supported platform
   cannot implement the current exact-identity contract.

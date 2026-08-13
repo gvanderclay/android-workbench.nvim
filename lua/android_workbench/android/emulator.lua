@@ -515,6 +515,7 @@ local function start_poll(operation, callback)
 end
 
 local function new_operation(service, kind, timeout_ms, callback)
+  local label = kind == 'cold_boot' and 'cold boot' or kind
   local operation = {
     callback = callback,
     child = nil,
@@ -529,7 +530,7 @@ local function new_operation(service, kind, timeout_ms, callback)
   }
 
   function operation.cancel()
-    local cancelled = failure('cancelled', ('Android emulator %s was cancelled.'):format(kind), { operation = kind })
+    local cancelled = failure('cancelled', ('Android emulator %s was cancelled.'):format(label), { operation = kind })
     if operation.done then
       if operation.delivered or operation.pending_err ~= nil then return false end
       operation.pending_err = cancelled
@@ -573,8 +574,8 @@ local function new_operation(service, kind, timeout_ms, callback)
   local ok, timer = pcall(service.defer_fn, function()
     if operation.done then return end
     operation.intent = failure(
-      kind == 'start' and 'boot_timeout' or 'stop_timeout',
-      ('Android emulator %s timed out after %d ms.'):format(kind, timeout_ms),
+      kind == 'stop' and 'stop_timeout' or 'boot_timeout',
+      ('Android emulator %s timed out after %d ms.'):format(label, timeout_ms),
       { operation = kind, timeout_ms = timeout_ms }
     )
     cancel_current(operation)
@@ -787,6 +788,7 @@ function Emulator:_spawn_for_start(operation, poll)
     return
   end
   local argv = { executable, '-avd', operation.avd_name }
+  if operation.cold_boot then argv[#argv + 1] = '-no-snapshot-load' end
   local process_callback_fired = false
   local started, process, spawn_err = pcall(self.spawn, argv, {
     detached = true,
@@ -838,7 +840,7 @@ function Emulator:_spawn_for_start(operation, poll)
   start_poll(operation, poll)
 end
 
-function Emulator:start(avd_name, callback)
+function Emulator:_start(avd_name, cold_boot, callback)
   assert(type(callback) == 'function', 'android_workbench.android.emulator: callback is required')
   local valid_name, name_err = valid_avd_name(avd_name)
   if not valid_name then return deferred(self, callback, name_err) end
@@ -848,8 +850,9 @@ function Emulator:start(avd_name, callback)
     return deferred(self, callback, failure('emulator_start_in_progress', ('Android AVD %s is already starting.'):format(avd_name), { avd_name = avd_name }))
   end
 
-  local operation = new_operation(self, 'start', self.boot_timeout_ms, callback)
+  local operation = new_operation(self, cold_boot and 'cold_boot' or 'start', self.boot_timeout_ms, callback)
   operation.avd_name = avd_name
+  operation.cold_boot = cold_boot
   operation.on_finish = function(current)
     if self.starting[avd_name] == current then self.starting[avd_name] = nil end
   end
@@ -881,6 +884,16 @@ function Emulator:start(avd_name, callback)
       end
       local match = matches[1]
       if match then
+        if first_scan and cold_boot then
+          fail_operation(
+            operation,
+            failure('emulator_already_running', ('Android AVD %s is already running and cannot be cold booted.'):format(avd_name), {
+              avd_name = avd_name,
+              serial = match.serial,
+            })
+          )
+          return
+        end
         saw_instance = true
         first_scan = false
         if match.state == 'online' then
@@ -903,6 +916,10 @@ function Emulator:start(avd_name, callback)
   poll()
   return operation
 end
+
+function Emulator:start(avd_name, callback) return self:_start(avd_name, false, callback) end
+
+function Emulator:cold_boot(avd_name, callback) return self:_start(avd_name, true, callback) end
 
 function Emulator:_poll_stopped(operation, target, kill_err)
   start_child(operation, 'stop verification device listing', function(done) return self.adb:list_devices(done) end, function(err, devices)
