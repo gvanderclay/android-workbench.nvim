@@ -1,7 +1,9 @@
 # Release evidence
 
 This ledger records reproducible release checks. Annotated tag `v0.1.0` resolves
-to exact verified commit `0caff50af8db68c8a8fbc4bf86a06a3f18f5582f`.
+to exact verified commit `0caff50af8db68c8a8fbc4bf86a06a3f18f5582f`;
+annotated tag `v0.2.0` resolves to exact verified commit
+`12723a34bdc23c1cf949f8f6188ecedb65e8a792`.
 
 ## Standalone CI
 
@@ -144,3 +146,39 @@ and isolated consumer data were removed. The pre-existing AVD remained online,
 and the real consumer checkout was not changed. The annotated `v0.1.0` tag was
 created and pushed only after these checks passed; its remote peeled tag resolves
 to the exact release commit above.
+
+## `v0.2.0` release
+
+Release candidate `12723a34bdc23c1cf949f8f6188ecedb65e8a792` passed R5
+verification on 2026-08-12. Its `lua/` and `plugin/` runtime is byte-identical
+to device-tested commit `fc2d53386b8c392180f887af1f20a17d15b902ad`, so the
+R4.6 two-application Android 16 evidence above applies without another device
+run.
+
+A disposable clean worktree at the exact candidate passed help-tag generation
+without a diff, all 15 contract suites, both package smokes, StyLua 2.5.2,
+ShellCheck 0.11.0, and `git diff --check`. The real integration gate again
+passed Gradle 7.3.3 with AGP 7.1.3, Gradle 9.1.0 with AGP 9.0.1, and the pinned
+Telescope, Plenary, and Overseer revisions. The fixtures removed their project
+state and build output, and the disposable worktree was deleted.
+
+The exact candidate passed
+[CI run 31654448695](https://github.com/gvanderclay/android-workbench.nvim/actions/runs/31654448695)
+with Neovim 0.12.4 on `ubuntu-latest` and `macos-latest`. Both jobs ran the
+standalone checks; Linux also ran the pinned StyLua format check.
+
+Sibling-consumer commit `c4982ced1cf830f9470cb0fa5cfc81a93affd91a`
+pins the candidate and asserts the public Logcat session-selection and stop-all
+methods. A disposable worktree from that exact consumer commit passed its
+Android Workbench smoke and full headless startup with isolated Neovim data;
+only pack-ui background checking was disabled to prevent unrelated lock drift.
+The installed package checkout was clean at the exact release candidate. Stow
+simulation and diff checks passed, all disposable data was removed, and the
+consumer commit was pushed separately.
+
+Remote annotated tag object `dad6ef1bc294bc13a4fed1ab17cfd0b904c73054`
+peels to the candidate above. A public, non-draft GitHub prerelease named
+`Android Workbench v0.2.0` was published on 2026-08-13 UTC at
+[`v0.2.0`](https://github.com/gvanderclay/android-workbench.nvim/releases/tag/v0.2.0).
+Its published body matches the curated release notes derived from the `0.2.0`
+changelog section.

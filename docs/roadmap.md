@@ -2,12 +2,12 @@
 
 ## Current state
 
-Android Workbench is now a standalone Neovim plugin with an initial `v0.1.0`
-release. Multi-session Logcat and normal-exit shutdown are complete as the
-bounded `v0.2.0` feature candidate. The runtime layout, bundled Gradle provider,
-command entry, vimdoc, focused contracts, clean package smoke, and CI definition
-were extracted without changing the module namespace, `:Android` grammar, or
-state location.
+Android Workbench is now a standalone Neovim plugin with `v0.1.0` and `v0.2.0`
+published as GitHub prereleases. Multi-session Logcat and normal-exit shutdown
+shipped in the bounded `v0.2.0` release. The runtime layout, bundled Gradle
+provider, command entry, vimdoc, focused contracts, clean package smoke, and CI
+definition were extracted without changing the module namespace, `:Android`
+grammar, or state location.
 
 This is an MIT-licensed plugin. The completed work below is ordered by user
 impact and correctness rather than feature count.
@@ -239,32 +239,32 @@ adapter support, publish to a plugin registry, or add release automation.
 
 ### R5.2 Standalone candidate verification
 
-- [ ] Run all standalone contracts, package smokes, formatting, help-tag, and
+- [x] Run all standalone contracts, package smokes, formatting, help-tag, and
   diff checks on the exact candidate.
-- [ ] Run the real Gradle/AGP and pinned optional-adapter integration gates and
+- [x] Run the real Gradle/AGP and pinned optional-adapter integration gates and
   ShellCheck their harnesses.
-- [ ] Verify the candidate from a clean checkout with no ignored local support
+- [x] Verify the candidate from a clean checkout with no ignored local support
   files.
 
 ### R5.3 Consumer and remote verification
 
-- [ ] From the latest committed sibling-consumer revision, create a disposable
+- [x] From the latest committed sibling-consumer revision, create a disposable
   worktree, pin the exact candidate with isolated Neovim data, and run its
   Android Workbench smoke and full headless startup without changing the live
   dotfiles checkout.
-- [ ] Push the approved candidate and require its Linux and macOS CI jobs to
+- [x] Push the approved candidate and require its Linux and macOS CI jobs to
   pass on the exact commit.
 
 ### R5.4 Publication
 
-- [ ] With explicit owner approval, create and push annotated tag `v0.2.0` on
+- [x] With explicit owner approval, create and push annotated tag `v0.2.0` on
   the exact verified candidate.
-- [ ] Publish a public, non-draft GitHub prerelease from that verified tag using
+- [x] Publish a public, non-draft GitHub prerelease from that verified tag using
   curated notes derived from the `0.2.0` changelog section.
 
 ### R5.5 Post-release record
 
-- [ ] Record the exact tag commit, CI run, consumer result, and GitHub release
+- [x] Record the exact tag commit, CI run, consumer result, and GitHub release
   URL after publication; keep any real dotfiles lock update separate.
 
 ## Deferred until demonstrated demand
