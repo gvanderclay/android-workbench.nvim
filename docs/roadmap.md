@@ -288,9 +288,13 @@ stop a live local AVD.
 
 ### R6.2 Cold Boot
 
-- [ ] Add Cold Boot only for stopped AVDs through the native emulator service,
+- [x] Add Cold Boot only for stopped AVDs through the native emulator service,
   using `-no-snapshot-load` with the existing readiness, timeout, identity, and
   cancellation behavior.
+
+Manual evidence on 2026-08-12: the owner cold booted a stopped local AVD from
+the manager, confirmed the running action narrowed to Stop, and restored the
+AVD to its stopped state.
 
 ### R6.3 Consumer cutover
 

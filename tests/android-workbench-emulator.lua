@@ -247,6 +247,90 @@ local ok, unexpected = xpcall(function()
 
   do
     local lists = {
+      {},
+      { device('emulator-5556', 'Pixel_API_35') },
+    }
+    local spawn_argv
+    local adb = {}
+    function adb:list_devices(callback) return completed(callback, nil, table.remove(lists, 1)) end
+    function adb:resolve_avd_name(_, callback) return completed(callback, nil, 'Pixel_API_35') end
+    function adb:boot_completed(_, callback) return completed(callback, nil, true) end
+    function adb:validate_serial(_, callback) return completed(callback, nil, device('emulator-5556', 'Pixel_API_35')) end
+    local service = Emulator.new {
+      adb = adb,
+      emulator = '/fake/emulator',
+      schedule = immediate_schedule,
+      boot_timeout_ms = 1000,
+      poll_interval_ms = 1,
+      spawn = function(argv, _, on_exit)
+        spawn_argv = vim.deepcopy(argv)
+        return fake_process(on_exit)
+      end,
+    }
+    expect_true('native emulator exposes Cold Boot', type(service.cold_boot) == 'function')
+    if type(service.cold_boot) == 'function' then
+      local result
+      service:cold_boot('Pixel_API_35', function(err, value) result = { err = err, value = value } end)
+      expect_true('Cold Boot reaches boot readiness', vim.wait(1000, function() return result ~= nil end, 1))
+      expect('Cold Boot succeeds', result.err, nil)
+      expect('Cold Boot uses direct no-snapshot argv', spawn_argv, { '/fake/emulator', '-avd', 'Pixel_API_35', '-no-snapshot-load' })
+    end
+  end
+
+  do
+    local spawn_count = 0
+    local adb = {}
+    function adb:list_devices(callback) return completed(callback, nil, { device('emulator-5554', 'Pixel_API_35') }) end
+    function adb:resolve_avd_name(_, callback) return completed(callback, nil, 'Pixel_API_35') end
+    function adb:boot_completed() error 'Cold Boot must reject before readiness' end
+    function adb:validate_serial() error 'Cold Boot must reject before validation' end
+    local service = Emulator.new {
+      adb = adb,
+      emulator = '/fake/emulator',
+      schedule = immediate_schedule,
+      spawn = function()
+        spawn_count = spawn_count + 1
+        error 'Cold Boot must not launch a running AVD'
+      end,
+    }
+    if type(service.cold_boot) == 'function' then
+      local result
+      service:cold_boot('Pixel_API_35', function(err, value) result = { err = err, value = value } end)
+      expect('Cold Boot rejects an AVD that is already running', result.err.code, 'emulator_already_running')
+      expect('rejected Cold Boot launches no emulator', spawn_count, 0)
+    end
+  end
+
+  do
+    local spawned
+    local adb = {}
+    function adb:list_devices(callback) return completed(callback, nil, {}) end
+    function adb:resolve_avd_name() error 'not reached' end
+    function adb:boot_completed() error 'not reached' end
+    function adb:validate_serial() error 'not reached' end
+    local service = Emulator.new {
+      adb = adb,
+      emulator = '/fake/emulator',
+      schedule = immediate_schedule,
+      boot_timeout_ms = 1000,
+      poll_interval_ms = 1000,
+      spawn = function(_, _, on_exit)
+        spawned = fake_process(on_exit)
+        return spawned
+      end,
+    }
+    local result
+    local handle = service:cold_boot('Pixel_API_35', function(err, value) result = { err = err, value = value } end)
+    expect('Cold Boot cancellation is accepted', handle:cancel(), true)
+    expect('Cold Boot cancellation targets only its owned process', spawned.kills, { 15 })
+    expect('Cold Boot cancellation waits for process exit', result, nil)
+    spawned.exit { code = 0, signal = 15 }
+    expect('Cold Boot cancellation is classified', result.err.code, 'cancelled')
+    expect('Cold Boot cancellation reports its operation', result.err.details.operation, 'cold_boot')
+  end
+
+  do
+    local lists = {
       { device('emulator-5554', 'Pixel_API_35', 'offline') },
       { device('emulator-5554', 'Pixel_API_35') },
     }

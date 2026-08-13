@@ -577,6 +577,42 @@ function Device:start_emulator(session, resource, callback)
   return operation
 end
 
+function Device:supports_cold_boot() return type(self.emulator.cold_boot) == 'function' end
+
+---@param session table
+---@param resource table
+---@param callback fun(err: table?, device: table?)
+---@return table
+function Device:cold_boot_emulator(session, resource, callback)
+  callback = callback or function() end
+  local operation = new_operation(session.root, callback)
+  local avd_name = raw_string(resource, 'avd_name')
+  if not valid_identity(avd_name) then
+    operation:finish(workbench_error('invalid_avd', 'The selected Android virtual device is invalid.', session.root))
+    return operation
+  end
+  if not self:supports_cold_boot() then
+    operation:finish(workbench_error('cold_boot_unsupported', 'The configured emulator service does not support Cold Boot.', session.root))
+    return operation
+  end
+
+  operation:start_child(
+    function(done) return self.emulator:cold_boot(avd_name, done) end,
+    function(err, value)
+      if err then
+        operation:finish(err)
+        return
+      end
+      local device, validation_err = runtime_device(value, nil, avd_name, session.root)
+      operation:finish(validation_err, device)
+    end,
+    function(err)
+      return workbench_error('emulator_cold_boot_failed', ('Could not cold boot Android emulator %s.'):format(avd_name), session.root, tostring(err))
+    end
+  )
+  return operation
+end
+
 ---@param session table
 ---@param resource table
 ---@param callback fun(err: table?, device: table?)

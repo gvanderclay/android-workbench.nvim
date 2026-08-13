@@ -56,6 +56,12 @@ local registry = {
     predicate = function(status) return status.operation == 'emulator_start' end,
   },
   {
+    id = 'cancel_emulator_cold_boot',
+    label = 'Cancel emulator Cold Boot',
+    argv = { 'cancel' },
+    predicate = function(status) return status.operation == 'emulator_cold_boot' end,
+  },
+  {
     id = 'cancel_emulator_manage',
     label = 'Cancel emulator manager',
     argv = { 'cancel' },

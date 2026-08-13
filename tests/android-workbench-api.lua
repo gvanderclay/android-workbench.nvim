@@ -358,6 +358,11 @@ local ports = {
       vim.schedule(function() callback(nil, { serial = 'emulator-5554', avd_name = avd_name, state = 'online', label = avd_name }) end)
       return { cancel = function() return true end }
     end,
+    cold_boot = function(_, avd_name, callback)
+      emulator_calls[#emulator_calls + 1] = { kind = 'cold_boot', avd_name = avd_name }
+      vim.schedule(function() callback(nil, { serial = 'emulator-5554', avd_name = avd_name, state = 'online', label = avd_name }) end)
+      return { cancel = function() return true end }
+    end,
     stop = function(_, request, callback)
       emulator_calls[#emulator_calls + 1] = { kind = 'stop', request = vim.deepcopy(request) }
       vim.schedule(function() callback(nil, { serial = request.serial, avd_name = request.avd_name }) end)
@@ -485,6 +490,11 @@ local ok, unexpected = xpcall(function()
   valid, config_error = pcall(android.setup, { ports = { emulator = { list_avds = function() end, start = function() end } } })
   expect('incomplete emulator port is rejected', valid, false)
   expect_true('emulator validation names missing method', tostring(config_error):find('ports.emulator.stop', 1, true))
+
+  valid, config_error = pcall(android.setup, {
+    ports = { emulator = { list_avds = function() end, start = function() end, stop = function() end } },
+  })
+  expect('custom emulator without optional Cold Boot remains valid', valid, true)
 
   valid, config_error = pcall(android.setup, { logcat = { open_on_run = 'yes' } })
   expect('invalid open-on-run option is rejected', valid, false)
@@ -772,6 +782,15 @@ local ok, unexpected = xpcall(function()
     { 'cancel_emulator_manage', 'open_logcat', 'status' }
   )
   expect(
+    'active emulator-cold-boot palette actions',
+    action_ids {
+      operation = 'emulator_cold_boot',
+      logcat = 'stopped',
+      selection = {},
+    },
+    { 'cancel_emulator_cold_boot', 'open_logcat', 'status' }
+  )
+  expect(
     'active emulator-start palette actions',
     action_ids {
       operation = 'emulator_start',
@@ -953,7 +972,10 @@ local ok, unexpected = xpcall(function()
     avd_picker.callback(nil, avd_picker.request.items[1])
     expect_true('stopped emulator reaches the contextual action picker', vim.wait(1000, function() return pending_picker ~= nil end, 10))
     manager_action_picker = pending_picker
-    expect('stopped emulator offers only Start', manager_action_picker.request.items, { { id = 'start', label = 'Start' } })
+    expect('stopped emulator offers Start and Cold Boot', manager_action_picker.request.items, {
+      { id = 'start', label = 'Start' },
+      { id = 'cold_boot', label = 'Cold Boot' },
+    })
     manager_action_picker.callback(nil, manager_action_picker.request.items[1])
     expect_true('emulator manager Start reaches its terminal', vim.wait(1000, function() return manager_result ~= nil end, 10))
     expect('emulator manager Start succeeds', manager_result.err, nil)
@@ -962,6 +984,45 @@ local ok, unexpected = xpcall(function()
       device = { serial = 'emulator-5554', avd_name = 'Pixel_8_API_35', state = 'online', label = 'Pixel_8_API_35' },
     })
     expect('emulator manager Start does not change project device selection', state_saves[root_one] or 0, manager_state_saves)
+
+    manager_result = nil
+    pending_picker = nil
+    android.manage_emulators({ root = root_one }, function(err, result) manager_result = { err = err, result = result } end)
+    expect_true('emulator manager reaches the stopped AVD picker before Cold Boot', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    avd_picker = pending_picker
+    pending_picker = nil
+    avd_picker.callback(nil, avd_picker.request.items[1])
+    expect_true('stopped emulator reaches the Cold Boot action', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    manager_action_picker = pending_picker
+    manager_action_picker.callback(nil, manager_action_picker.request.items[2])
+    expect_true('emulator manager Cold Boot reaches its terminal', vim.wait(1000, function() return manager_result ~= nil end, 10))
+    expect('emulator manager Cold Boot succeeds', manager_result.err, nil)
+    expect('emulator manager reports the exact cold-booted AVD', manager_result.result, {
+      kind = 'emulator_cold_boot',
+      device = { serial = 'emulator-5554', avd_name = 'Pixel_8_API_35', state = 'online', label = 'Pixel_8_API_35' },
+    })
+    expect('emulator manager Cold Boot uses its port capability', emulator_calls[#emulator_calls], {
+      kind = 'cold_boot',
+      avd_name = 'Pixel_8_API_35',
+    })
+    expect('emulator manager Cold Boot does not change project device selection', state_saves[root_one] or 0, manager_state_saves)
+
+    local cold_boot = ports.emulator.cold_boot
+    ports.emulator.cold_boot = nil
+    manager_result = nil
+    pending_picker = nil
+    android.manage_emulators({ root = root_one }, function(err, result) manager_result = { err = err, result = result } end)
+    expect_true('manager with a basic custom emulator reaches the AVD picker', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    avd_picker = pending_picker
+    pending_picker = nil
+    avd_picker.callback(nil, avd_picker.request.items[1])
+    expect_true('basic custom emulator reaches the action picker', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    manager_action_picker = pending_picker
+    manager_action_picker.callback(nil, nil)
+    ports.emulator.cold_boot = cold_boot
+    expect('basic custom emulator omits optional Cold Boot', manager_action_picker.request.items, { { id = 'start', label = 'Start' } })
+    expect_true('basic custom emulator action dismissal reaches its terminal', vim.wait(1000, function() return manager_result ~= nil end, 10))
+    expect('basic custom emulator action dismissal is quiet', manager_result, { err = nil, result = nil })
 
     avd_running = true
     manager_result = nil

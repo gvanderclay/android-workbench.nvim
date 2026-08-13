@@ -1569,7 +1569,13 @@ function App:manage_emulators(context, callback)
         end
 
         local running = raw_string(selected, 'serial') ~= nil
-        local actions = running and { { id = 'stop', label = 'Stop' } } or { { id = 'start', label = 'Start' } }
+        local actions
+        if running then
+          actions = { { id = 'stop', label = 'Stop' } }
+        else
+          actions = { { id = 'start', label = 'Start' } }
+          if self.devices:supports_cold_boot() then actions[#actions + 1] = { id = 'cold_boot', label = 'Cold Boot' } end
+        end
         operation:start_child(
           function(done) return self:_pick(session, selected.avd_name, actions, emulator_action_label, nil, done) end,
           function(action_err, picked_action)
@@ -1584,19 +1590,27 @@ function App:manage_emulators(context, callback)
             end
 
             local action_id = raw_string(picked_action, 'id')
-            local action = actions[1]
-            if action_id ~= action.id then
+            local action
+            for _, candidate in ipairs(actions) do
+              if action_id ~= nil and candidate.id == action_id then
+                action = candidate
+                break
+              end
+            end
+            if not action then
               operation:finish(workbench_error('invalid_selection', 'The picker returned an unknown Android emulator action.', session.root))
               return
             end
 
-            local starting = action_id == 'start'
-            local kind = starting and 'emulator_start' or 'emulator_stop'
+            local starting = action_id ~= 'stop'
+            local kind = action_id == 'start' and 'emulator_start' or action_id == 'cold_boot' and 'emulator_cold_boot' or 'emulator_stop'
+            local verb = action_id == 'start' and 'Starting' or action_id == 'cold_boot' and 'Cold booting' or 'Stopping'
             operation.kind = kind
-            self:_emit('info', ('%s Android emulator %s…'):format(starting and 'Starting' or 'Stopping', selected.avd_name))
+            self:_emit('info', ('%s Android emulator %s…'):format(verb, selected.avd_name))
             operation:start_child(
               function(done)
-                if starting then return self.devices:start_emulator(session, selected, done) end
+                if action_id == 'start' then return self.devices:start_emulator(session, selected, done) end
+                if action_id == 'cold_boot' then return self.devices:cold_boot_emulator(session, selected, done) end
                 return self.devices:stop_emulator(session, selected, done)
               end,
               function(emulator_err, device)
@@ -1614,8 +1628,8 @@ function App:manage_emulators(context, callback)
               end,
               function(start_err)
                 return workbench_error(
-                  starting and 'emulator_start_failed' or 'emulator_stop_failed',
-                  starting and 'Could not start the Android emulator workflow.' or 'Could not start the Android emulator stop workflow.',
+                  kind .. '_failed',
+                  ('Could not start the Android emulator %s workflow.'):format(action.label),
                   session.root,
                   tostring(start_err)
                 )

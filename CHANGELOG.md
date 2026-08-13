@@ -8,6 +8,8 @@ This file records user-visible Android Workbench changes.
 
 - A project-local emulator manager that lists every installed AVD with its
   running state and offers Start or Stop without changing target selection.
+- Native Cold Boot for stopped AVDs, using the existing bounded readiness and
+  cancellation lifecycle without wiping user data.
 
 ## 0.2.0 - 2026-08-12
 
