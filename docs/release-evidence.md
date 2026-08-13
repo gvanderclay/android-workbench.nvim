@@ -3,7 +3,9 @@
 This ledger records reproducible release checks. Annotated tag `v0.1.0` resolves
 to exact verified commit `0caff50af8db68c8a8fbc4bf86a06a3f18f5582f`;
 annotated tag `v0.2.0` resolves to exact verified commit
-`12723a34bdc23c1cf949f8f6188ecedb65e8a792`.
+`12723a34bdc23c1cf949f8f6188ecedb65e8a792`; annotated tag `v0.3.0`
+resolves to exact verified commit
+`20160884e91bc40b338725e0b651de208a305212`.
 
 ## Standalone CI
 
@@ -182,3 +184,37 @@ peels to the candidate above. A public, non-draft GitHub prerelease named
 [`v0.2.0`](https://github.com/gvanderclay/android-workbench.nvim/releases/tag/v0.2.0).
 Its published body matches the curated release notes derived from the `0.2.0`
 changelog section.
+
+## `v0.3.0` release
+
+Release candidate `20160884e91bc40b338725e0b651de208a305212` passed R7
+verification on 2026-08-12. Its `lua/` and `plugin/` runtime is byte-identical
+to reviewed emulator-manager candidate
+`fb5f2837e8138c0a5b7045c1e571e75e645ce6e8`, whose state-aware Start, Stop,
+and Cold Boot actions passed the recorded live local-AVD checks.
+
+A disposable clean worktree at the exact release candidate passed help-tag
+generation without a diff, all 15 contract suites, both package smokes, StyLua
+2.5.2, ShellCheck 0.11.0, and `git diff --check`. The real integration gate
+passed Gradle 7.3.3 with AGP 7.1.3, Gradle 9.1.0 with AGP 9.0.1, and the pinned
+Telescope, Plenary, and Overseer revisions. The fixtures removed their project
+state and build output, and the disposable worktree was removed.
+
+The exact candidate passed
+[CI run 31660894527](https://github.com/gvanderclay/android-workbench.nvim/actions/runs/31660894527)
+with Neovim 0.12.4 on `ubuntu-latest` and `macos-latest`. Both jobs ran the
+standalone checks; Linux also ran the pinned StyLua format check.
+
+Sibling-consumer commit `043076924233c4bf7f2006890885ec6bad08d848`
+pins the exact candidate. A disposable worktree from that consumer commit
+installed a clean package checkout at the candidate and passed its Android
+Workbench smoke, full headless startup, isolated Stow simulation, and diff
+check. The live installed package checkout and unrelated Zen edit were not
+changed. The consumer commit was pushed separately.
+
+Remote annotated tag object `a3993026e75424ac4489f5ee6a0107e825d4d9d4`
+peels to the candidate above. A public, non-draft, non-prerelease GitHub release
+named `Android Workbench v0.3.0` was published on 2026-08-13 UTC at
+[`v0.3.0`](https://github.com/gvanderclay/android-workbench.nvim/releases/tag/v0.3.0).
+It is the repository's latest release, and its published body matches the
+curated `v0.3.0` release notes.
