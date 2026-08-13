@@ -4,84 +4,93 @@
 CONTENTS                                                *android-workbench*
 
 1. Introduction.................................|android-workbench-introduction|
-2. Setup...............................................|android-workbench-setup|
-3. Lua API...............................................|android-workbench-api|
-4. Commands..........................................|android-workbench-commands|
-5. Trust and discovery.................................|android-workbench-trust|
+2. Quick start.....................................|android-workbench-quickstart|
+3. Configuration.........................................|android-workbench-setup|
+4. Adapter contracts...............................|android-workbench-adapters|
+5. Lua API...............................................|android-workbench-api|
+6. Commands..........................................|android-workbench-commands|
+7. Trust and discovery.................................|android-workbench-trust|
+8. Troubleshooting.............................|android-workbench-troubleshooting|
 
 ==============================================================================
 1. INTRODUCTION                                 *android-workbench-introduction*
 
-Android Workbench provides a small, native Android project model without
-owning Kotlin LSP, formatting, testing, DAP, autosave, or file watching.
+Android Workbench is an extensible Android development toolkit for Neovim,
+focused on Gradle, app deployment, emulators, and Logcat.
 
-The current implementation supports trusted Gradle discovery, root-isolated
-state, persistent application/variant/device selection, AVD discovery and
-emulator management/start/Cold Boot/stop, Gradle builds, install and launch,
-application stop,
-cancellation, arbitrary registered Gradle tasks, navigable Gradle build errors,
-inspectable native task output, and app-scoped Logcat.
+Workbench handles Android and Gradle workflows. Kotlin and Java language
+support, formatting, test frameworks, debugging, autosave, and file watching
+remain outside its scope.
+
+It discovers Android applications and variants through the project's Gradle
+wrapper, remembers the selected app, variant, and device per project, and
+provides Build, Run, application Stop, registered Gradle tasks, emulator
+management, build problems, and independent app/device Logcat sessions.
 
 ==============================================================================
-2. SETUP                                               *android-workbench-setup*
+2. QUICK START                                    *android-workbench-quickstart*
+
+REQUIREMENTS
+
+Android Workbench requires Neovim 0.12.4 and an executable Unix `gradlew` in
+the Android project. Gradle workflows also need the JDK and Android SDK used by
+that project. Device actions and Logcat require `adb` on `PATH`; AVD management
+requires the Android Emulator on `PATH`.
+
+macOS and Linux are tested. Windows is not supported yet because Workbench has
+no tested `gradlew.bat` path. Run this inside the Android project first: >vim
+
+  :checkhealth android_workbench
+<
+FIRST RUN
+
+Open the action picker and choose `Run`: >vim
+
+  :Android
+<
+When one target or device is available, Workbench selects it automatically.
+Otherwise it opens a picker. The choices are remembered for that canonical
+project root. A selected stopped AVD is started and awaited automatically.
+
+The same workflow is available directly: >vim
+
+  :Android run
+<
+Gradle actions execute project-controlled code. Workbench asks for Neovim
+project trust immediately before each Gradle invocation. See
+|android-workbench-trust| for the complete trust boundary and
+|android-workbench-commands| for every command.
+
+==============================================================================
+3. CONFIGURATION                                       *android-workbench-setup*
 
 Setup is optional and configuration-only. It does not inspect a project, prompt
 for trust, create a session, query ADB, enumerate AVDs, or start Gradle.
 Built-in adapters use |vim.ui.select()|, |vim.notify()|, |vim.secure.read()|,
 and a private JSON state file.
 
-To select with Telescope without changing |vim.ui.select()| globally, run
-Gradle through Overseer, retain quickfix as the canonical problem list, and
-also project build failures through |vim.diagnostic|: >lua
+DEFAULT BEHAVIOR
+
+You do not need to call `setup()` when the defaults are suitable. The public
+behavior options and their defaults are: >lua
 
   require('android_workbench').setup({
-    ports = {
-      picker = require('android_workbench.integrations.telescope').new(),
-      problems = require('android_workbench.integrations.diagnostics').new({
-        sink = require('android_workbench.integrations.quickfix').new({
-          open_on_failure = true,
-          close_on_success = true,
-        }),
-      }),
-      runner = require('android_workbench.integrations.overseer').new(),
+    logcat = {
+      open_on_run = false,
+    },
+    run = {
+      start_stopped_avd = true,
+    },
+    emulator = {
+      boot_timeout_ms = 180000,
+      poll_interval_ms = 1000,
     },
   })
 <
-The explicit example above uses Telescope for selection and Overseer for Gradle
-task execution. Overseer opens a non-focused output dock when a task starts,
-preserves unseen failed output, and disposes successful output on its normal
-timer. Pass `components` to the Overseer adapter constructor to choose a
-different presentation policy. Use `:OverseerToggle! bottom` to hide or reopen
-the task dock without moving the cursor.
+`open_on_run` starts or reveals Logcat after a successful Run.
+`start_stopped_avd` lets Run start a remembered stopped AVD without another
+picker. Emulator timers are bounded positive integers in milliseconds.
 
-Build, Run, and arbitrary Gradle tasks collect recognized Kotlin, Java, Android
-Lint, AAPT, and AGP source errors into one Workbench-owned quickfix list per
-project root. The library default populates that list without opening it and
-does not publish diagnostics. The example explicitly wraps the quickfix sink in
-the optional diagnostic presenter. The quickfix list remains the canonical,
-complete collection; the wrapper opens failed lists without moving focus and
-closes the matching visible Workbench list after a successful task.
-
-The diagnostic presenter mirrors a failure into a dedicated namespace for its
-canonical root and uses an Android Workbench source label. It skips modified
-buffers. Editing a projected buffer invalidates its build diagnostics; it is
-eligible again only after it is unmodified and a later accepted failure
-republishes it. The presenter may create an unloaded buffer handle with
-|bufadd()| so native diagnostics appear when that file is opened, but it never
-loads or reads the source buffer itself and retains no problem-batch cache.
-Namespace and edit-watch state are memory-only and do not survive Neovim
-restart. Existing signs, underlines, inline presentation, navigation, detail
-views, status components, and a manually opened Trouble diagnostic view can
-therefore consume the projection. The presenter never imports or opens Trouble.
-Kotlin language-server diagnostics may describe the same compiler error, so
-duplicate diagnostic entries are possible.
-
-A successful Gradle task clears only that root's prior Workbench list. With
-`close_on_success`, the adapter closes a visible quickfix window only when it
-currently displays that exact owned list; it never selects or closes an
-unrelated user or plugin list, and quickfix history remains available. A
-cancelled task preserves the prior quickfix list and diagnostic projection.
-Unrecognized and locationless failures remain in the configured runner output.
 The native runner opens a non-focused split below the current window when a
 Build, Run, or arbitrary Gradle task starts. Its scratch buffer retains the
 latest task for each canonical root, bounded to 10,000 lines and 4 MiB of
@@ -105,13 +114,82 @@ constructing the native runner: >lua
 <
 An injected custom runner keeps complete ownership of its output UI. In that
 case |:Android-output| reports that native output is unavailable; it does not
-inspect or replace the custom runner's windows. The Overseer example above
-continues to use `:OverseerToggle! bottom`.
+inspect or replace the custom runner's windows.
+
+MAPPINGS
 
 Android Workbench defines no global mappings and has no key-hint integration.
 Its owned Logcat and native task-output buffers define only their documented
-buffer-local controls. A consuming configuration may add mappings to the
-commands below and provide native `desc` values for a key-hint UI.
+buffer-local controls. A consuming configuration may add mappings with native
+`desc` values: >lua
+
+  vim.keymap.set('n', '<leader>aa', '<cmd>Android<CR>', {
+    desc = 'Android actions',
+  })
+<
+OPTIONAL INTEGRATIONS
+
+Telescope and Overseer can replace the native picker and runner independently.
+This does not change |vim.ui.select()| globally: >lua
+
+  require('android_workbench').setup({
+    ports = {
+      picker = require('android_workbench.integrations.telescope').new(),
+      runner = require('android_workbench.integrations.overseer').new(),
+    },
+  })
+<
+Overseer opens a non-focused output dock when a task starts,
+preserves unseen failed output, and disposes successful output on its normal
+timer. Pass `components` to the Overseer adapter constructor to choose a
+different presentation policy. Use `:OverseerToggle! bottom` to hide or reopen
+the task dock without moving the cursor.
+
+Build, Run, and arbitrary Gradle tasks collect recognized Kotlin, Java, Android
+Lint, AAPT, and AGP source errors into one Workbench-owned quickfix list per
+project root. The library default populates that list without opening it and
+does not publish diagnostics. To open failed lists without moving focus, close
+the matching visible Workbench list after success, and mirror failures through
+|vim.diagnostic|, explicitly wrap the quickfix sink: >lua
+
+  local quickfix = require('android_workbench.integrations.quickfix').new({
+    open_on_failure = true,
+    close_on_success = true,
+  })
+
+  require('android_workbench').setup({
+    ports = {
+      problems = require('android_workbench.integrations.diagnostics').new({
+        sink = quickfix,
+      }),
+    },
+  })
+<
+The quickfix list remains the canonical, complete collection.
+
+The diagnostic presenter mirrors a failure into a dedicated namespace for its
+canonical root and uses an Android Workbench source label. It skips modified
+buffers. Editing a projected buffer invalidates its build diagnostics; it is
+eligible again only after it is unmodified and a later accepted failure
+republishes it. The presenter may create an unloaded buffer handle with
+|bufadd()| so native diagnostics appear when that file is opened, but it never
+loads or reads the source buffer itself and retains no problem-batch cache.
+Namespace and edit-watch state are memory-only and do not survive Neovim
+restart. Existing signs, underlines, inline presentation, navigation, detail
+views, status components, and a manually opened Trouble diagnostic view can
+therefore consume the projection. The presenter never imports or opens Trouble.
+Kotlin language-server diagnostics may describe the same compiler error, so
+duplicate diagnostic entries are possible.
+
+A successful Gradle task clears only that root's prior Workbench list. With
+`close_on_success`, the adapter closes a visible quickfix window only when it
+currently displays that exact owned list; it never selects or closes an
+unrelated user or plugin list, and quickfix history remains available. A
+cancelled task preserves the prior quickfix list and diagnostic projection.
+Unrecognized and locationless failures remain in the configured runner output.
+
+==============================================================================
+4. ADAPTER CONTRACTS                              *android-workbench-adapters*
 
 The available ports are `adb`, `emulator`, `runner`, `logcat`, `picker`,
 `trust`, `notifications`, `problems`, `state`, and `discovery`. Each is one
@@ -433,7 +511,7 @@ the complete snapshot before caching it. It also passes an owned copy to
 Malformed, partial, aliased, or identity-inconsistent results are rejected.
 
 ==============================================================================
-3. LUA API                                               *android-workbench-api*
+5. LUA API                                               *android-workbench-api*
 
 The supported pre-1.0 Lua facade is returned by: >lua
 
@@ -668,7 +746,7 @@ Logcat/problem models are private implementation modules. Lua can `require()`
 them, but reachability is not a support promise.
 
 ==============================================================================
-4. COMMANDS                                          *android-workbench-commands*
+6. COMMANDS                                          *android-workbench-commands*
 
                                                      *:Android*
 :Android
@@ -682,22 +760,27 @@ them, but reachability is not a support promise.
         leaves that command unchanged and emits one warning. It does not
         replace the incumbent command.
 
+                                              *:Android-status*
 :Android status
         Show the current root, discovery phase, authorization state, target
         count, selected application, variant, device, and active operation.
         This never runs Gradle, queries ADB, enumerates AVDs, or prompts for
         trust. A remembered stopped AVD is shown by name without probing it.
 
+                                             *:Android-refresh*
 :Android refresh
         Authorize the project if needed, then replace the cached model only
         after a complete Gradle discovery succeeds.
 
+                                          *:Android-target-app*
 :Android target app
         Select and persist an Android application project. Discovery is lazy.
 
+                                      *:Android-target-variant*
 :Android target variant
         Select and persist a variant for the current application.
 
+                                       *:Android-target-device*
 :Android target device
         Open one picker containing connected physical devices, running
         emulators, and stopped AVDs. Selecting a stopped AVD remembers it but
@@ -737,12 +820,13 @@ them, but reachability is not a support promise.
         selected by name and can be started again without another picker. This
         never stops a physical device.
 
+                                               *:Android-build*
 :Android build
-        Run the selected target's exact qualified assemble task. The configured
-        runner owns task execution and live output. Recognized source errors
-        are published through the configured problem sink after the task result
-        is accepted. The native runner opens its root-owned output split without
-        moving focus.
+        Resolve an Android target, prompting when needed, then run its exact
+        qualified assemble task. The configured runner owns task execution and
+        live output. Recognized source errors are published through the
+        configured problem sink after the task result is accepted. The native
+        runner opens its root-owned output split without moving focus.
 
                                                      *:Android-gradle*
 :Android gradle
@@ -786,22 +870,25 @@ them, but reachability is not a support promise.
         This command applies only to the dependency-free native runner. A
         configured custom runner retains its own output and window policy.
 
+                                                 *:Android-run*
 :Android run
-        Run the selected target's exact qualified install task with
-        `ANDROID_SERIAL` scoped to the remembered online device, resolve its
-        enabled MAIN/LAUNCHER activity, and launch it. A remembered stopped AVD
-        is started and awaited first by default, without another picker. A
-        disconnected remembered physical device produces an error; Workbench
-        never silently chooses a replacement. When selected, the Overseer
-        adapter streams live output in a non-focused dock; Android Workbench
-        reports completion or failure through its notification port. A
-        successful install clears prior Gradle errors before launcher resolution,
-        so a later ADB-only failure does not leave stale compile locations.
+        Resolve an Android target and device, prompting when needed, then run
+        the target's exact qualified install task with `ANDROID_SERIAL` scoped
+        to that device. Resolve its enabled MAIN/LAUNCHER activity and launch
+        it. A remembered stopped AVD is started and awaited first by default,
+        without another picker. A disconnected remembered physical device
+        produces an error; Workbench never silently chooses a replacement.
+        When selected, the Overseer adapter streams live output in a
+        non-focused dock. A successful install clears prior Gradle errors
+        before launcher resolution, so a later ADB-only failure does not leave
+        stale compile locations.
 
+                                                *:Android-stop*
 :Android stop
         Force-stop the selected application on the remembered online device.
         It does not stop the emulator or disconnect a physical device.
 
+                                              *:Android-cancel*
 :Android cancel
         Cancel the active build, run, arbitrary Gradle task, application-stop,
         emulator-manager, emulator-start, emulator-cold-boot, or emulator-stop
@@ -811,6 +898,7 @@ them, but reachability is not a support promise.
         still complete normally. Process-backed adapters are expected to
         terminate their child within a bounded grace period.
 
+                                              *:Android-logcat*
 :Android logcat
         Start or reveal Logcat for the selected application and online device.
         Sessions are identified by exact application ID and device serial.
@@ -822,6 +910,7 @@ them, but reachability is not a support promise.
         history, and filters survive application PID restarts and package
         reinstalls. A shared Android UID can also include sibling packages.
 
+                                     *:Android-logcat-sessions*
 :Android logcat sessions
         Open a root-local picker containing every live Logcat session, sorted
         by application ID and device serial. Labels include both identity
@@ -830,6 +919,7 @@ them, but reachability is not a support promise.
         exits or is replaced while the picker is open, the selection is
         rejected as stale.
 
+                                         *:Android-logcat-stop*
 :Android logcat stop
         Cancel the most recent pending Logcat start, or stop the current live
         Logcat session for the project when no start is pending. A refused stop
@@ -837,6 +927,7 @@ them, but reachability is not a support promise.
         current after the current one stops or exits. Build and Run are not
         cancelled.
 
+                                     *:Android-logcat-stop-all*
 :Android logcat stop all
         Attempt to stop every live Logcat session for the current project.
         Sessions that accept stop are removed; refused sessions remain live.
@@ -896,7 +987,7 @@ Commands have static completion. Completion never evaluates Gradle code,
 queries ADB, or enumerates AVDs.
 
 ==============================================================================
-5. TRUST AND DISCOVERY                                *android-workbench-trust*
+7. TRUST AND DISCOVERY                                *android-workbench-trust*
 
 Android discovery and Gradle Build/Run/arbitrary-task execution evaluate
 project-owned build logic. The default trust adapter calls |vim.secure.read()|
@@ -932,5 +1023,81 @@ read Android Studio's selected-device or emulator state.
 Run `:checkhealth android_workbench` for local prerequisites. When the current
 directory is inside a wrapper project, health requires `gradlew` to be a regular
 executable file, matching Gradle discovery.
+
+==============================================================================
+8. TROUBLESHOOTING                         *android-workbench-troubleshooting*
+
+START WITH HEALTH
+
+Run this from the Android project: >vim
+
+  :checkhealth android_workbench
+<
+The report checks Neovim, the project wrapper, ADB, and Android Emulator paths
+without running Gradle or contacting a device. Use `:messages` to inspect a
+notification that disappeared.
+
+PROJECT OR TARGET NOT FOUND
+
+Workbench resolves the nearest parent directory containing `gradlew`. Check
+`:pwd` and the current buffer path if no project is found. The Unix wrapper must
+be a regular executable file; run `chmod +x gradlew` in the project when its
+execute bit is missing.
+
+If the wrapper is found but Android targets changed, run: >vim
+
+  :Android refresh
+<
+Discovery evaluates project build logic and may ask for trust. A failed refresh
+keeps the last complete project model instead of replacing it with partial
+data.
+
+DEVICE NOT FOUND OR NOT READY
+
+Compare Workbench with: >sh
+
+  adb devices -l
+<
+Physical devices must already be online and authorized in ADB. Workbench does
+not pair, authorize, connect, or disconnect them. Select another device with
+`:Android target device`. A disconnected remembered physical device is not
+silently replaced. Run may start a remembered stopped AVD; other application
+and Logcat actions require an online device.
+
+BUILD OR RUN FAILED
+
+With the native runner, reopen the latest complete task output with: >vim
+
+  :Android output
+<
+Recognized source errors also appear in the Workbench-owned quickfix list.
+Locationless or unrecognized failures remain in task output. A custom runner
+owns its own output UI, so use that runner's command instead.
+
+LOGCAT IS EMPTY
+
+Confirm the expected application and device in the Logcat window bar or with
+`:Android logcat sessions`. Press `x` in the native Logcat window to reset its
+level, tag, and message filters, and press `p` if rendering is paused. Logcat is
+filtered by the selected application package; launch the app or trigger a log
+message after opening the session. Packages that deliberately share one Android
+UID can appear in the same session.
+
+COMMAND COLLISION
+
+Workbench preserves an existing global `:Android` command instead of replacing
+it. Find the command owner with: >vim
+
+  :verbose command Android
+<
+Remove or rename the other command in its owning configuration, then restart
+Neovim so Workbench can register its command.
+
+REPORTING A PROBLEM
+
+The contribution guide lists the environment, health output, exact command,
+task output, and minimal clean-Neovim reproduction needed for a useful report:
+
+https://github.com/gvanderclay/android-workbench.nvim/blob/main/CONTRIBUTING.md
 
 vim:tw=78:ts=8:noet:ft=help:norl:

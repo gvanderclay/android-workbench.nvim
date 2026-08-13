@@ -5,7 +5,7 @@ Workbench before and during its extraction into a standalone repository. It
 explains why current boundaries exist; current behavior remains defined by the
 vimdoc and tests.
 
-## AN001 — Build a focused, swappable Android workflow
+## Build a focused, swappable Android workflow
 
 - **Status:** Accepted
 - **Decision:** Build Android Workbench as an Android-only orchestration layer.
@@ -38,7 +38,7 @@ vimdoc and tests.
   composite-build, coexistence, and swappability requirements, or daily use
   exposes an ownership flaw.
 
-## AN002 — Refactor only at demonstrated lifecycle seams
+## Refactor only at demonstrated lifecycle seams
 
 - **Status:** Accepted
 - **Decision:** Preserve the public facade, `App` composition root, explicit
@@ -68,7 +68,7 @@ vimdoc and tests.
   a second implementation needs a different boundary, or measurements show a
   current owner is a bottleneck.
 
-## AN003 — Model AVDs as stable resources behind a semantic emulator port
+## Model AVDs as stable resources behind a semantic emulator port
 
 - **Status:** Accepted
 - **Decision:** Represent a stopped AVD as `{ avd_name }` and a running emulator
@@ -110,9 +110,9 @@ vimdoc and tests.
   a cross-process duplicate problem becomes observable, or a supported platform
   cannot implement the current exact-identity contract.
 
-## AN004 — Separate Gradle problem collection from presentation
+## Separate Gradle problem collection from presentation
 
-- **Status:** Accepted; extended by AN005
+- **Status:** Accepted; extended by the diagnostic projection decision below
 - **Decision:** Parse bounded Build/Run/Gradle-task output into neutral source
   problems, carry them through runner results, and publish one accepted terminal
   batch through an explicit problem-sink port. Use a root-keyed native quickfix
@@ -146,7 +146,7 @@ vimdoc and tests.
   presenter needs additional neutral data, or the terminal policy must represent
   a demonstrated workflow that the current batch cannot express.
 
-## AN005 — Keep diagnostics an explicit projection over canonical quickfix
+## Keep diagnostics an explicit projection over canonical quickfix
 
 - **Status:** Accepted
 - **Decision:** Keep the native root-keyed quickfix sink as the default and
@@ -177,7 +177,7 @@ vimdoc and tests.
   hides useful context, or another diagnostic consumer needs more neutral
   metadata.
 
-## AN006 — Discover registered Gradle task names without realizing tasks
+## Discover registered Gradle task names without realizing tasks
 
 - **Status:** Accepted
 - **Decision:** Extend the trusted Android model with exact names of registered
@@ -213,7 +213,7 @@ vimdoc and tests.
   needs bounded search context, task-rule-only tasks become a concrete workflow,
   or the exact-ID contract must support another demonstrated execution mode.
 
-## AN007 — Separate package source from consumer policy
+## Separate package source from consumer policy
 
 - **Status:** Accepted
 - **Decision:** Maintain the reusable runtime, bundled provider, vimdoc,
@@ -239,7 +239,7 @@ vimdoc and tests.
 - **Revisit when:** No active consumer remains, another package boundary proves
   simpler, or the release roadmap selects a licensed stable API.
 
-## AN008 — Support one closed pre-1.0 facade
+## Support one closed pre-1.0 facade
 
 - **Status:** Accepted
 - **Decision:** Treat `require('android_workbench')` as one closed action facade.
@@ -274,7 +274,7 @@ vimdoc and tests.
   result field, a supported port requires a public constructor change, or the
   first stable release sets a stricter compatibility policy.
 
-## AN009 — Support four replacement ports during 0.x
+## Support four replacement ports during 0.x
 
 - **Status:** Accepted
 - **Decision:** Support the exact picker, runner, problem-sink, and five-method
@@ -311,7 +311,7 @@ vimdoc and tests.
   the first stable release selects a compatibility policy, or a supported DTO
   cannot express a demonstrated workflow.
 
-## AN010 — License the repository under MIT
+## License the repository under MIT
 
 - **Status:** Accepted
 - **Decision:** License Android Workbench under the MIT License with copyright
@@ -322,9 +322,10 @@ vimdoc and tests.
   attribution obligation requires one.
 - **Considered:** Keeping the repository unlicensed until the first tag and
   copying the incomplete license text from the former embedded configuration.
-- **Rationale:** The owner selected MIT. Git history records one author for the
-  extracted implementation and its standalone changes, and the provenance
-  inventory found no additional attribution notice.
+- **Rationale:** MIT permits broad reuse with a short attribution requirement.
+  Git history records one author for the extracted implementation and its
+  standalone changes, and the provenance inventory found no additional
+  attribution notice.
 - **Tradeoffs:** MIT permits reuse without promising API stability or a tagged
   release. Recorded history and source scans cannot prove that no unrecorded
   source was ever consulted.
@@ -334,7 +335,7 @@ vimdoc and tests.
 - **Revisit when:** Ownership changes or new material introduces another
   license or attribution obligation.
 
-## AN011 — Spool hidden native Logcat history privately
+## Spool hidden native Logcat history privately
 
 - **Status:** Accepted
 - **Decision:** Keep each native Logcat reader active when its last
@@ -367,7 +368,7 @@ vimdoc and tests.
   interaction, captured-message persistence becomes deliberate scope, or a
   shared collector is separately justified.
 
-## AN012 — Switch native Logcat buffers through one owned dock
+## Switch native Logcat buffers through one owned dock
 
 - **Status:** Accepted
 - **Decision:** Let every native Logcat session retain its own buffer and state,
@@ -398,7 +399,7 @@ vimdoc and tests.
   action, tabpage-local docks become necessary, or an external consumer needs a
   reusable presentation coordinator.
 
-## AN013 — Keep independent root-local Logcat sessions
+## Keep independent root-local Logcat sessions
 
 - **Status:** Accepted
 - **Decision:** Store live Logcat entries per canonical root, keyed by exact
@@ -420,7 +421,7 @@ vimdoc and tests.
   App owns lifecycle and identity; presenters remain free to own their UI.
 - **Tradeoffs:** Each live session owns an ADB reader and independently bounded
   history. The aggregate status cannot identify the current session; selection
-  and detailed session state remain separate R4.4 contracts.
+  and detailed session state remain separate public contracts.
 - **Consequences:** Different applications on one device and one application on
   different devices can collect concurrently. Run auto-open no longer replaces
   another identity, and late terminals cannot remove a sibling or successor.
@@ -428,7 +429,7 @@ vimdoc and tests.
   capture identity is accepted, or a supported presenter contract needs richer
   session metadata.
 
-## AN014 — Expose root-local Logcat controls through the picker port
+## Expose root-local Logcat controls through the picker port
 
 - **Status:** Accepted
 - **Decision:** Use the existing supported picker port to select live Logcat
@@ -460,10 +461,10 @@ vimdoc and tests.
   receive neutral items, custom Logcat presenters retain their own UI and
   window policy, and another root is never listed or stopped.
 - **Revisit when:** Pending-start cleanup needs an aggregate public result, a
-  real consumer needs richer session metadata, or R4.5 shows that another
+  real consumer needs richer session metadata, or another
   presentation-neutral action is required.
 
-## AN015 — Filter native Logcat by stable package identity
+## Filter native Logcat by stable package identity
 
 - **Status:** Accepted
 - **Decision:** Give each native session a device-wide Logcat reader and filter
@@ -501,7 +502,7 @@ vimdoc and tests.
   shared process monitor, exact shared-UID separation becomes necessary, or a
   general package/process query language is accepted.
 
-## AN016 — Shut down loaded Workbench state on normal Neovim exit
+## Shut down loaded Workbench state on normal Neovim exit
 
 - **Status:** Accepted
 - **Decision:** Register one `VimLeavePre` runtime hook that invokes the public
@@ -515,7 +516,7 @@ vimdoc and tests.
 - **Considered:** Requiring consumers to call shutdown explicitly, requiring
   the facade during every exit, registering a later `VimLeave` hook, and
   scanning for matching operating-system processes after exit.
-- **Rationale:** A normal `:qa!` from the isolated smoke left an owned ADB
+- **Rationale:** A normal `:qa!` during live verification left an owned ADB
   Logcat reader reparented to PID 1. A focused check then proved that
   `VimLeavePre` invoked zero Workbench shutdown calls because no exit hook was
   registered. The existing irreversible shutdown boundary already owns the
@@ -532,15 +533,15 @@ vimdoc and tests.
   supported embedding host needs a distinct teardown contract, or measured
   cleanup failures need user-visible reporting before exit.
 
-## AN017 — Publish tagged 0.x versions as ordinary GitHub releases
+## Publish tagged 0.x versions as ordinary GitHub releases
 
 - **Status:** Accepted
 - **Decision:** Starting with `v0.3.0`, publish tagged `0.x` versions as public,
   non-draft GitHub releases rather than marking them as GitHub prereleases.
   Continue to use semantic version `0.x` and the documented compatibility
   policy to communicate that the public surface may change before 1.0.
-- **Requirements:** Complete the same exact-candidate standalone, integration,
-  consumer, CI, annotated-tag, and evidence gates before publication. Do not
+- **Requirements:** Complete the standalone, integration, consumer, CI,
+  annotated-tag, and evidence checks in the roadmap before publication. Do not
   imply 1.0 stability, plugin-registry availability, or broader platform and
   adapter support.
 - **Considered:** Keep every pre-1.0 tag marked as a GitHub prerelease, wait for
@@ -548,7 +549,7 @@ vimdoc and tests.
   retaining the existing semantic compatibility signal.
 - **Rationale:** The repository now has repeatable release gates, Linux and
   macOS CI, real Gradle/AGP and optional-adapter checks, live Android evidence,
-  and an exact pinned consumer. The GitHub prerelease flag no longer adds a
+  and a pinned external consumer. The GitHub prerelease flag no longer adds a
   useful warning beyond the explicit `0.x` policy.
 - **Tradeoffs:** GitHub may present the newest `0.x` tag more prominently even
   though compatibility can still change before 1.0. README and release notes
@@ -559,13 +560,15 @@ vimdoc and tests.
 - **Revisit when:** The compatibility policy changes, a plugin registry imposes
   different publication semantics, or 1.0 stability gates are selected.
 
-## Repository extraction status
+## Current package status
 
-Moving the runtime into this repository does not change AN001–AN006. The module
-namespace, command, state location, bundled provider placement, and consumer
-policy boundary remain intact. Extraction is a packaging and ownership change,
-not permission to widen the plugin or freeze every reachable Lua module.
+Moving the runtime into this repository did not change its original workflow,
+lifecycle, emulator, problem-presentation, diagnostic, or Gradle-discovery
+decisions. The module namespace, command, state location, bundled provider
+placement, and consumer policy boundary remain intact. Extraction was a
+packaging and ownership change, not permission to widen the plugin or freeze
+every reachable Lua module.
 
-The repository is MIT-licensed and first released as `v0.1.0`. Later feature,
-compatibility, and release-evidence work remains tracked separately in
-`roadmap.md`.
+The repository is MIT-licensed and has published `v0.1.0` through `v0.3.0`.
+Current direction and deferred ideas are tracked in `roadmap.md`; release
+checks are recorded in `release-evidence.md`.

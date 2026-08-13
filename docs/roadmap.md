@@ -2,359 +2,51 @@
 
 ## Current state
 
-Android Workbench is now a standalone Neovim plugin. `v0.1.0` and `v0.2.0`
-were published as GitHub prereleases; `v0.3.0` is the first ordinary GitHub
-release while semantic version `0.x` continues to communicate the pre-1.0
-compatibility policy. It contains the project-local emulator manager, Cold
-Boot, and shutdown-containment fixes. The runtime layout, bundled Gradle
-provider, command entry, vimdoc, focused contracts, clean package smoke, and CI
-definition were extracted without changing the module namespace, `:Android`
-grammar, or state location.
-
-This is an MIT-licensed plugin. The completed work below is ordered by user
-impact and correctness rather than feature count.
-
-## Extraction baseline
-
-- [x] Place `lua/android_workbench/**`, the bundled Gradle init script,
-  `plugin/android-workbench.lua`, vimdoc/tags, and focused tests in an ordinary
-  Neovim runtime layout.
-- [x] Add isolated `make test-contract` and `make test-package` lanes that do
-  not load or install external consumer dependencies.
-- [x] Add a clean package smoke for startup, `:Android`, setup/App laziness, no
-  package mappings or eager optional providers, help, health, and the bundled
-  Gradle asset.
-- [x] Add an initial Neovim 0.12.4 Linux/macOS CI definition that runs the
-  standalone checks and formatting verification.
-- [x] Move durable architecture and design rationale into the package
-  repository while leaving consumer mappings and provider composition outside.
-- [x] Make an external consumer configuration use the exact repository package
-  and pinned revision, retain only a small coexistence/configuration smoke
-  there, and remove its duplicate in-tree runtime, tests, and vimdoc.
-- [x] Confirm the first remote CI run succeeds from the public repository.
-
-The extraction baseline establishes compartmentalized ownership. It does not
-close the runtime or release gates below.
-
-## R1 — Runtime containment and owned data
-
-Complete these correctness changes before treating the standalone package as a
-release candidate.
-
-### R1.1 Irreversible shutdown
-
-- [x] Add a private shutdown-only abandon transition spanning `App` and
-  execution orchestration.
-- [x] If a child refuses cancellation or cannot be cancelled, allow it to
-  finish privately while suppressing late ADB, Logcat, problem, notification,
-  public-callback, and replacement-App side effects.
-- [x] Cover delayed cancellation refusal, a late successful Run terminal, and a
-  fresh replacement App in one focused regression matrix.
-
-Ordinary user cancellation may remain active when a child refuses to stop;
-shutdown is the stronger irreversible boundary.
-
-### R1.2 Public result ownership
-
-- [x] Return owned target, device, status, and error DTO members from facade
-  workflows rather than Session-retained tables.
-- [x] Preserve intentionally identity-bearing handles without blindly deep
-  copying lifecycle objects.
-- [x] Prove mutating any earlier public result cannot change later target
-  resolution, Gradle argv, state, or device identity.
-
-### R1.3 Complete discovery normalization
-
-- [x] Extract one provider-neutral closed snapshot normalizer and owned copy.
-- [x] Apply it to bundled and custom discovery before Session caching.
-- [x] Validate bounds, arrays, build/target/task identities, derived task names,
-  uniqueness, exact root, and cross-collection consistency.
-- [x] Prove malformed, partial, or mutating custom snapshots cannot reach a
-  runner, ADB service, state adapter, or current snapshot.
-
-This closes an adapter containment problem. It is not a shell-injection claim;
-Workbench already executes direct argv.
-
-### R1.4 Logcat byte bounds
-
-- [x] Bound native Logcat logical-line and retained-record bytes in addition to
-  record count.
-- [x] Discard through the next newline after an oversized record and
-  resynchronize without manufacturing a partial record.
-- [x] Cover oversized single chunks, split chunks, recovery, teardown, and
-  bounded retained state.
-
-## R2 — Effective native defaults and public boundary
-
-### R2.0 Discoverable native Logcat controls
-
-- [x] Keep application/device identity, stream state, and common controls
-  visible in a window-local bar while records follow the tail.
-- [x] Add buffer-local shortcut help that closes with the stream and exposes
-  every native Logcat action without a global mapping or dependency.
-- [x] Keep the scrolling buffer record-only while preserving user `FileType`
-  overrides for native buffer mappings.
-
-### R2.1 Inspectable native task output
-
-- [x] Add a bounded visible and reopenable owner for native runner output.
-- [x] Keep recognized source problems in the configured problem sink while
-  leaving complete locationless/unrecognized failure output inspectable.
-- [x] Do not make Overseer required and do not add automatic provider detection.
-- [x] Prove command users can reopen the latest root/task output after terminal
-  success or failure without taking over unrelated buffers or windows.
-
-### R2.2 Deliberate pre-1.0 API
-
-- [x] Define the supported facade, module, context, callback, handle, result,
-  and structured-error surface.
-- [x] Remove, privatize, or explicitly support `_notify` and the current
-  `setup()` return instead of exposing them accidentally.
-- [x] Return owned DTOs, state callback timing and exactly-once rules, and
-  document shutdown semantics.
-- [x] Treat internal lifecycle/model modules as private even though Lua can
-  require them.
-- [x] Create an `Unreleased` changelog once the public surface is selected.
-
-### R2.3 Port maturity
-
-- [x] Fully document picker, runner, and problem-sink DTOs and conformance first;
-  they are the demonstrated external composition seams.
-- [x] Classify remaining semantic ports as supported or experimental during
-  `0.x` instead of implying equal stability.
-- [x] Document the five-method public ADB service and the native emulator's
-  conditional private ADB capabilities. Do not widen the general ADB port just
-  to expose native implementation details.
-- [x] Add contract fixtures for each port promoted to supported status.
-
-### R2.4 Consumer-safe context query
-
-- [x] Add a narrow, side-effect-free facade query for whether a path/buffer is
-  under a Workbench Gradle root.
-- [x] Move consumer mapping installation off direct
-  `require('android_workbench.root')` access.
-- [x] Keep the resolver implementation and its filesystem seams private.
-
-### R2.5 Bounded package patches
-
-- [x] Register `:Android` without silently overwriting an existing command.
-- [x] Make health reject a non-file or non-executable Gradle wrapper using the
-  same prerequisite rule as discovery.
-- [x] Add direct Telescope adapter tests for selection, cancellation, picker
-  wipeout, and exactly-once completion.
-- [x] Keep the optional Overseer adapter's overrideable output/disposal behavior;
-  choosing that adapter is consumer policy, not core leakage.
-
-## R3 — Release evidence
-
-These gates are required for `v0.1.0`, not for ordinary pre-release development.
-
-### R3.1 License and provenance
-
-- [x] Have the owner select a license and add the complete holder/year notice.
-- [x] Inventory the Lua source, tests, vimdoc, and bundled Gradle script for
-  copied or adapted material and record any attribution obligations.
-- [x] Add no `NOTICE`; the inventory establishes no additional attribution need.
-- [x] State the selected license in the README. Do not copy the incomplete
-  license text from the former embedded configuration.
-
-### R3.2 Reproducible package verification
-
-- [x] Record a successful remote CI run on every OS/Neovim version claimed by
-  the first support statement.
-- [x] Keep fast package contracts isolated from user configuration, network
-  installation, Android SDK state, and arbitrary projects.
-- [x] Add a reproducible real Gradle emitter-to-decoder fixture at the claimed
-  endpoints, initially the recorded Gradle 7.3.3 and current endpoint.
-- [x] Cover composite identity, exact task execution, and a second
-  configuration-cache run in that fixture.
-- [x] Run a minimal Android fixture at the exact Gradle 7.3.3/AGP 7.1.3 floor
-  and one chosen current pair before advertising those pairs as supported.
-- [x] Load pinned/claimed Telescope and Overseer revisions in a small real
-  adapter smoke; keep existing fakes for exhaustive lifecycle failures.
-
-Do not adopt Gradle TestKit merely because it exists. A smaller replayable
-wrapper fixture is acceptable if it evaluates the shipped provider and decoder
-through the real execution path.
-
-### R3.3 Outcome-based daily use
-
-- [x] Use the exact extracted package for routine Build, Run, application Stop,
-  Logcat, emulator start/stop, and arbitrary Gradle tasks.
-- [x] Exercise recognized source failures and locationless failures through the
-  final native/default output design.
-- [x] Exercise cancellation and retry, Neovim restart, package update, multiple
-  roots, and worktree switching without state or operation leakage.
-- [x] Resolve every remaining blocker/high issue or record an explicit accepted
-  limitation with user impact.
-
-Completion is based on these outcomes, not an arbitrary number of days or a
-feature-count comparison.
-
-### R3.4 First pre-1.0 release
-
-- [x] Make the README support statement match verified OS, Neovim, Gradle, AGP,
-  and optional-adapter evidence exactly.
-- [x] State Windows as not currently supported rather than promising an
-  untested wrapper path.
-- [x] Document a simple `0.x` change policy and populate the changelog.
-- [x] Rerun standalone CI and the selected manual outcome checklist from the
-  exact release commit.
-- [x] Tag `v0.1.0` only after licensing, provenance, runtime, API, verification,
-  and daily-use gates are complete.
-
-## R4 — Multi-session Logcat
-
-The verified Android Studio comparison, accepted first-version boundary,
-decisions, and checkpoint contracts are recorded in
-[`docs/logcat-sessions.md`](logcat-sessions.md).
-
-- [x] R4.1 move hidden native history into private bounded temporary storage
-  while capture continues.
-- [x] R4.2 make native handles share one owned Logcat dock without sharing or
-  replacing their readers.
-- [x] R4.3 replace the single root Logcat slot with an independent,
-  generation-safe session registry keyed by application ID and device serial.
-- [x] R4.4 add root-local session selection, current-session stop, and
-  best-effort stop-all through deliberate command and facade contracts.
-- [x] R4.4a replace stale UID-scoped capture with device-wide collection and a
-  refreshed client-side package filter.
-- [x] R4.5 make session navigation discoverable in the native Logcat view
-  without defining global mappings or custom-presenter UI policy.
-- [x] R4.6 record exact same-device/different-app lifecycle, bounded storage,
-  and final process/file cleanup evidence.
-
-## R5 — `v0.2.0` release
-
-Release `v0.2.0` contains only the completed R4 multi-session Logcat work and
-the normal-exit shutdown fix. It does not add another feature, widen platform or
-adapter support, publish to a plugin registry, or add release automation.
-
-### R5.1 Candidate boundary
-
-- [x] Assign the accepted changes to the `0.2.0` changelog section and keep an
-  empty `Unreleased` section for later work.
-- [x] Make the README describe multi-session Logcat and use version-neutral
-  prerelease language.
-- [x] Confirm no runtime file differs after the exact R4.6 device-tested commit
-  `fc2d533`; otherwise reopen the live device gate before release.
-
-### R5.2 Standalone candidate verification
-
-- [x] Run all standalone contracts, package smokes, formatting, help-tag, and
-  diff checks on the exact candidate.
-- [x] Run the real Gradle/AGP and pinned optional-adapter integration gates and
-  ShellCheck their harnesses.
-- [x] Verify the candidate from a clean checkout with no ignored local support
-  files.
-
-### R5.3 Consumer and remote verification
-
-- [x] From the latest committed sibling-consumer revision, create a disposable
-  worktree, pin the exact candidate with isolated Neovim data, and run its
-  Android Workbench smoke and full headless startup without changing the live
-  dotfiles checkout.
-- [x] Push the approved candidate and require its Linux and macOS CI jobs to
-  pass on the exact commit.
-
-### R5.4 Publication
-
-- [x] With explicit owner approval, create and push annotated tag `v0.2.0` on
-  the exact verified candidate.
-- [x] Publish a public, non-draft GitHub prerelease from that verified tag using
-  curated notes derived from the `0.2.0` changelog section.
-
-### R5.5 Post-release record
-
-- [x] Record the exact tag commit, CI run, consumer result, and GitHub release
-  URL after publication; keep any real dotfiles lock update separate.
-
-## R6 — Project-local emulator manager
-
-Keep this feature separate from the exact `v0.2.0` candidate. The manager is
-available only from a resolved Gradle-wrapper project and does not replace or
-mutate the project's selected deployment device.
-
-### R6.1 State-aware manager
-
-- [x] List every installed AVD with running/stopped state and resolve picker
-  results against the offered inventory.
-- [x] Offer only Stop for a running AVD and only Start for a stopped AVD while
-  preserving the existing explicit emulator start/stop commands.
-- [x] Document and verify the public facade, command, contextual action,
-  cancellation, exact result, root isolation, and selection invariants.
-
-Manual evidence on 2026-08-12: the owner loaded this feature worktree from a
-Gradle-wrapper project and confirmed the state-aware manager could start and
-stop a live local AVD.
-
-### R6.2 Cold Boot
-
-- [x] Add Cold Boot only for stopped AVDs through the native emulator service,
-  using `-no-snapshot-load` with the existing readiness, timeout, identity, and
-  cancellation behavior.
-
-Manual evidence on 2026-08-12: the owner cold booted a stopped local AVD from
-the manager, confirmed the running action narrowed to Stop, and restored the
-AVD to its stopped state.
-
-### R6.3 Consumer cutover
-
-- [x] Pin the exact reviewed package commit in the sibling dotfiles consumer,
-  map `<Leader>ie` to the manager, and run its Android and startup smokes.
-
-Consumer evidence on 2026-08-12: dotfiles commit `5d85732` pins exact runtime
-candidate `fb5f283`, maps `<Leader>ie` to the manager, and asserts the public
-facade and buffer-local mapping. The exact-source Android consumer smoke,
-isolated Neovim startup, full Kotlin coexistence suite, Stow simulation, and
-diff validation passed without changing the installed package checkout or the
-owner's unrelated Zen edit.
-
-## R7 — `v0.3.0` release
-
-Release `v0.3.0` contains only the completed R6 emulator manager, native Cold
-Boot, and the irreversible shutdown fixes that preceded it. It does not include
-the separate retained-Logcat-handle synchronization follow-up, widen platform
-or adapter support, publish to a plugin registry, or add release automation.
-
-### R7.1 Candidate boundary
-
-- [x] Assign the accepted changes to the `0.3.0` changelog section and keep an
-  empty `Unreleased` section for later work.
-- [x] Freeze the release boundary to R6 plus the two shutdown-containment fixes.
-- [x] Confirm no runtime file differs after exact reviewed candidate `fb5f283`;
-  otherwise reopen the live emulator gate before release.
-- [x] Publish tagged `0.x` versions as ordinary GitHub releases while retaining
-  the documented pre-1.0 compatibility policy.
-
-### R7.2 Standalone candidate verification
-
-- [x] Run all standalone contracts, package smokes, formatting, help-tag, and
-  diff checks on the exact candidate.
-- [x] Run the real Gradle/AGP and pinned optional-adapter integration gates and
-  ShellCheck their harnesses.
-- [x] Verify the candidate from a clean checkout with no ignored local support
-  files.
-
-### R7.3 Consumer and remote verification
-
-- [x] From the latest committed sibling-consumer revision, pin the exact
-  release candidate in a disposable worktree and run its Android Workbench
-  smoke and full headless startup without changing the live installed checkout.
-- [x] Push the approved candidate and require its Linux and macOS CI jobs to
-  pass on the exact commit.
-
-### R7.4 Publication
-
-- [x] With explicit owner approval, create and push annotated tag `v0.3.0` on
-  the exact verified candidate.
-- [x] Publish a public, non-draft GitHub release from that verified tag using
-  curated notes derived from the `0.3.0` changelog section.
-
-### R7.5 Post-release record
-
-- [x] Record the exact tag commit, CI run, consumer result, and GitHub release
-  URL after publication; keep the real dotfiles lock update separate.
+Android Workbench is an MIT-licensed Neovim plugin with three published
+releases. It works without optional dependencies. Vimdoc defines its pre-1.0
+Lua facade, and its compatibility claims are backed by real Gradle fixtures and
+live Android checks.
+
+| Release | Main change |
+| --- | --- |
+| [`v0.1.0`](https://github.com/gvanderclay/android-workbench.nvim/releases/tag/v0.1.0) | Standalone package, public facade, native task output, Logcat controls, and release verification |
+| [`v0.2.0`](https://github.com/gvanderclay/android-workbench.nvim/releases/tag/v0.2.0) | Independent app/device Logcat sessions with bounded hidden history |
+| [`v0.3.0`](https://github.com/gvanderclay/android-workbench.nvim/releases/tag/v0.3.0) | Project-local emulator manager, Cold Boot, and shutdown fixes |
+
+The [changelog](../CHANGELOG.md) lists user-visible changes. The
+[release evidence](release-evidence.md) records the checks behind each release.
+
+## Direction before 1.0
+
+The plugin remains in `0.x`. The facade and replacement ports documented in
+vimdoc are the intended public surface, but a minor `0.x` release may still
+contain breaking changes. Compatibility changes must be stated in the
+changelog and release notes.
+
+Work should continue to favor complete Android workflows over a broad IDE
+feature list. A new feature belongs here only after a concrete workflow shows
+why the existing commands or extension points are insufficient.
+
+No feature milestone is currently selected. Maintenance work can proceed when
+it preserves the documented boundary and has a focused regression or
+verification case.
+
+## Release requirements
+
+Before a tag is published:
+
+- The standalone contract, package, formatting, help, and diff checks must pass
+  from the release commit on every claimed CI platform.
+- Changes to Gradle discovery, its protocol, or compatibility claims require
+  the real Gradle and Android Gradle Plugin fixture.
+- Changes to optional integrations require the pinned Telescope and Overseer
+  checks.
+- Changes to device, emulator, or Logcat lifecycle behavior require the
+  relevant live Android workflow when isolated tests cannot establish the
+  result.
+- Vimdoc, the changelog, release notes, and release evidence must agree with the
+  shipped behavior.
+- Publishing a tag or GitHub release requires explicit maintainer approval.
 
 ## Deferred until demonstrated demand
 
@@ -366,10 +58,12 @@ or adapter support, publish to a plugin registry, or add release automation.
   deletion, wiping, or snapshot management.
 - Kotlin/Java LSP, formatting, DAP, test frameworks, KMP/iOS, autosave, and file
   watching.
-- Provider registries, dependency-injection frameworks, automatic optional-
-  plugin detection, a generic task framework, or file-size-driven module splits.
+- Provider registries, dependency-injection frameworks, automatic optional
+  plugin detection, a generic task framework, or file-size-driven module
+  splits.
 - LuaRocks publication, plugin-registry submission, release bots, a runtime
   version module, or a package schema without a selected release need.
 
-New work enters the active roadmap only when a concrete workflow demonstrates
-its value and ownership.
+Deferred items are not a promised backlog. They are boundaries that may be
+revisited when a real workflow justifies the added ownership and lifecycle
+cost.

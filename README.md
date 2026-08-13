@@ -148,17 +148,21 @@ require('android_workbench').setup {
 Each integration is optional. Omitted ports keep their native behavior, and
 Workbench loads Telescope or Overseer only when you select that integration.
 The diagnostic projection and adapter contracts are documented in
-`:help android-workbench-setup`.
+`:help android-workbench-adapters`.
 
 ## Help
 
 - `:help android-workbench` is the full user and adapter reference.
 - `:checkhealth android_workbench` checks Neovim, the project wrapper, ADB, and
   the emulator tools used by the current project.
-- Bugs and feature requests belong in
-  [GitHub Issues](https://github.com/gvanderclay/android-workbench.nvim/issues).
+- The [contribution guide](CONTRIBUTING.md) explains useful bug reports and
+  clean-Neovim reproductions before opening a
+  [GitHub issue](https://github.com/gvanderclay/android-workbench.nvim/issues).
 
-## Development
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[documentation map](docs/README.md) before changing public behavior.
 
 Run the standalone checks with:
 
@@ -173,10 +177,6 @@ network and local Android SDK:
 ```sh
 make test-integration
 ```
-
-Read the [architecture guide](docs/architecture/android-workbench.md),
-[decision record](docs/decisions.md), and [roadmap](docs/roadmap.md) before
-changing public behavior.
 
 ## Releases
 

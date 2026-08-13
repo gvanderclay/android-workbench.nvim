@@ -14,9 +14,8 @@ Android application/variant model, remembered target and device selection, AVD
 discovery and project-local emulator management/start/Cold Boot/stop, exact
 build/install/launch/stop operations, names-only registered Gradle-task
 discovery and execution, accepted build problems, and application-scoped
-Logcat. It composes picker, runner,
-notification, problem, persistence, trust, ADB, emulator, discovery, and Logcat
-capabilities through explicit ports.
+Logcat. It composes picker, runner, notification, problem, persistence, trust,
+ADB, emulator, discovery, and Logcat capabilities through explicit ports.
 
 It does not own Kotlin or Java language tooling, formatting, testing, DAP,
 autosave, file watching, editor sessions, global working-directory policy, KMP,
@@ -312,12 +311,11 @@ replaces only the buffer in the standard bottom split that the same native
 presenter created. A manually visible session is focused in place, and a dock
 that displays an unrelated buffer loses ownership before the next show.
 `logcat/spool.lua` owns hidden native history. It serializes asynchronous reads
-and writes through at most two active rolling
-segments, bounds queued payload, creates each file as owner-only, and unlinks
-its pathname immediately. One retired segment may remain open only while its
-single in-flight write finishes. The scratch buffer contains records rather
-than scrolling UI chrome; the native presenter does not alter global mappings
-or unrelated windows.
+and writes through at most two active rolling segments, bounds queued payload,
+creates each file as owner-only, and unlinks its pathname immediately. One
+retired segment may remain open only while its single in-flight write finishes.
+The scratch buffer contains records rather than scrolling UI chrome; the native
+presenter does not alter global mappings or unrelated windows.
 
 Each native session owns a device-wide Logcat reader. The parser removes UID
 metadata from display text after using it to associate records with the exact
@@ -523,14 +521,19 @@ The standalone contract suites are organized by owner:
 - [`android-workbench-logcat.lua`](../../tests/android-workbench-logcat.lua):
   device-wide stream parsing, package filtering and refresh, presenter history,
   navigation, and teardown.
+- [`android-workbench-logcat-sessions.lua`](../../tests/android-workbench-logcat-sessions.lua):
+  independent session identity, switching, aggregate status, stop-all, and
+  shutdown.
 - [`android-workbench-telescope.lua`](../../tests/android-workbench-telescope.lua):
   selection, cancellation, prompt wipeout, and exactly-once completion for the
   optional picker adapter.
 
 `tests/package-smoke.lua` separately verifies ordinary clean plugin loading,
 `:Android`, setup/App laziness, no package-defined mappings or eager optional
-providers, help, health, and the bundled Gradle asset. These tests do not replace
-real Gradle/AGP and optional-provider release gates.
+providers, help, health, and the bundled Gradle asset.
+`tests/package-collision-smoke.lua` verifies that an existing `:Android` command
+is preserved. These tests do not replace real Gradle/AGP and optional-provider
+release gates.
 
 `tests/integration/gradle/` is the explicit real Gradle/AGP lane. It runs the
 shipped provider and public facade from disposable floor/current Android
@@ -549,14 +552,13 @@ after child adoption; independent roots; and failure at process/persistence
 boundaries. Preserve output coalescing, trust adjacency, final identity checks,
 and root-isolated state.
 
-## Maintenance and current gaps
+## Maintenance
 
-Use the vimdoc, this architecture, the decision record, focused tests, roadmap,
-and implementation for their distinct responsibilities. Do not duplicate
-checkpoint status or compatibility claims in this document.
+The [documentation map](../README.md) assigns public behavior, ownership,
+rationale, executable behavior, and release status to separate sources. Do not
+duplicate implementation history or compatibility claims in this document.
 
-The standalone extraction preserves the existing runtime namespace, command,
-state path, and bundled provider layout. It does not itself close the known
-API, licensing, compatibility, or release gates. Those are listed in
-`docs/roadmap.md` and must be completed as focused changes rather than folded
-into unrelated feature work.
+The standalone extraction is complete, and `v0.1.0` through `v0.3.0` have been
+published. The roadmap records current direction and deferred work. Add a new
+item there only after a concrete workflow demonstrates its value and owner; add
+accepted architecture changes to the decision record.
