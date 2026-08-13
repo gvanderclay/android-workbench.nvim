@@ -82,6 +82,15 @@ local function raw_string(value, field)
   return type(result) == 'string' and result or nil
 end
 
+local function emulator_resource_label(resource)
+  local avd_name = raw_string(resource, 'avd_name') or 'Android emulator'
+  local serial = raw_string(resource, 'serial')
+  if serial then return ('%s (running: %s)'):format(avd_name, serial) end
+  return ('%s (stopped)'):format(avd_name)
+end
+
+local function emulator_action_label(action) return raw_string(action, 'label') or 'Android emulator action' end
+
 local function new_operation(callback)
   local operation = {
     child = nil,
@@ -1503,6 +1512,122 @@ function App:_start_emulator_workflow(kind, context, callback)
       )
     end
   )
+
+  return operation
+end
+
+---@param context? table
+---@param callback? fun(err: table?, result: table?)
+---@return table handle
+function App:manage_emulators(context, callback)
+  callback = callback or function() end
+  local session, session_err = self:_session(context)
+  if not session then
+    local operation = self:_complete(callback)
+    vim.schedule(function() operation:finish(session_err) end)
+    return operation
+  end
+
+  local operation, rejected = self:_admit_root_operation(session, 'emulator_manage', callback)
+  if not operation then return rejected end
+
+  operation:start_child(function(done) return self.devices:list_emulators(session, done) end, function(list_err, emulators)
+    if operation.cancelled then return end
+    if list_err then
+      operation:finish(list_err)
+      return
+    end
+    if #emulators == 0 then
+      operation:finish(workbench_error('avd_not_found', 'No Android virtual devices are installed.', session.root))
+      return
+    end
+
+    operation:start_child(
+      function(done) return self:_pick(session, 'Android emulator', emulators, emulator_resource_label, nil, done) end,
+      function(picker_err, picked)
+        if operation.cancelled then return end
+        if picker_err then
+          operation:finish(picker_err)
+          return
+        end
+        if picked == nil then
+          operation:finish()
+          return
+        end
+
+        local selected
+        local selected_id = raw_string(picked, 'id')
+        for _, candidate in ipairs(emulators) do
+          if selected_id ~= nil and candidate.id == selected_id then
+            selected = candidate
+            break
+          end
+        end
+        if not selected then
+          operation:finish(workbench_error('invalid_selection', 'The picker returned an unknown Android emulator.', session.root))
+          return
+        end
+
+        local running = raw_string(selected, 'serial') ~= nil
+        local actions = running and { { id = 'stop', label = 'Stop' } } or { { id = 'start', label = 'Start' } }
+        operation:start_child(
+          function(done) return self:_pick(session, selected.avd_name, actions, emulator_action_label, nil, done) end,
+          function(action_err, picked_action)
+            if operation.cancelled then return end
+            if action_err then
+              operation:finish(action_err)
+              return
+            end
+            if picked_action == nil then
+              operation:finish()
+              return
+            end
+
+            local action_id = raw_string(picked_action, 'id')
+            local action = actions[1]
+            if action_id ~= action.id then
+              operation:finish(workbench_error('invalid_selection', 'The picker returned an unknown Android emulator action.', session.root))
+              return
+            end
+
+            local starting = action_id == 'start'
+            local kind = starting and 'emulator_start' or 'emulator_stop'
+            operation.kind = kind
+            self:_emit('info', ('%s Android emulator %s…'):format(starting and 'Starting' or 'Stopping', selected.avd_name))
+            operation:start_child(
+              function(done)
+                if starting then return self.devices:start_emulator(session, selected, done) end
+                return self.devices:stop_emulator(session, selected, done)
+              end,
+              function(emulator_err, device)
+                if operation.cancelled then return end
+                if emulator_err then
+                  operation:finish(emulator_err)
+                  return
+                end
+                if starting then
+                  self:_emit('info', ('Android emulator %s is ready on %s.'):format(selected.avd_name, raw_string(device, 'serial') or 'ADB'))
+                else
+                  self:_emit('info', ('Stopped Android emulator %s.'):format(selected.avd_name))
+                end
+                operation:finish(nil, { kind = kind, device = device })
+              end,
+              function(start_err)
+                return workbench_error(
+                  starting and 'emulator_start_failed' or 'emulator_stop_failed',
+                  starting and 'Could not start the Android emulator workflow.' or 'Could not start the Android emulator stop workflow.',
+                  session.root,
+                  tostring(start_err)
+                )
+              end
+            )
+          end,
+          function(start_err) return workbench_error('picker_failed', 'Could not open the Android emulator action picker.', session.root, tostring(start_err)) end
+        )
+      end,
+      function(start_err) return workbench_error('picker_failed', 'Could not open the Android emulator picker.', session.root, tostring(start_err)) end
+    )
+  end, function(start_err) return workbench_error('emulator_list_failed', 'Could not list Android virtual devices.', session.root, tostring(start_err)) end)
 
   return operation
 end

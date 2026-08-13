@@ -412,6 +412,15 @@ function M.stop_emulator(opts, callback)
 end
 
 ---@param opts? AndroidWorkbenchContext
+---@param callback? fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchEmulatorResult?)
+---@return AndroidWorkbenchOperationHandle handle
+function M.manage_emulators(opts, callback)
+  local action_context = context(opts)
+  local done = callback_or_noop(callback)
+  return app():manage_emulators(action_context, done)
+end
+
+---@param opts? AndroidWorkbenchContext
 ---@param callback? fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchStopResult?)
 ---@return AndroidWorkbenchOperationHandle handle
 function M.stop(opts, callback)

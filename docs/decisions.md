@@ -80,7 +80,9 @@ vimdoc and tests.
   Revalidate serial plus AVD name, reject ambiguous duplicates, use bounded boot
   readiness, and wait for stop disappearance. Cancellation may terminate only a
   launcher process Workbench created and still owns. Ready, adopted, and
-  pre-existing emulators outlive the operation and Neovim.
+  pre-existing emulators outlive the operation and Neovim. Resolve emulator
+  manager choices against the offered inventory and do not change project
+  target selection as a side effect.
 - **Considered:** Routing the long-lived emulator through the Gradle runner or
   Overseer, exposing a generic process port, using an emerging Android CLI as
   the default, importing Android Studio state, separate ADB/AVD action hubs, and
@@ -96,7 +98,9 @@ vimdoc and tests.
   for native AVD workflows.
 - **Consequences:** Device selection presents one neutral inventory. Run may
   start a remembered stopped AVD by explicit configuration; application Stop
-  and Logcat never do. AVD creation, deletion, wiping, cold boot, snapshots, SDK
+  and Logcat never do. The project-local emulator manager presents the AVD-only
+  subset and offers Start for stopped AVDs or Stop for running AVDs without
+  selecting them. AVD creation, deletion, wiping, cold boot, snapshots, SDK
   installation, Android Studio state, and an embedded emulator remain outside
   scope.
 - **Revisit when:** A second mature emulator backend needs different semantics,

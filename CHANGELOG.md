@@ -4,6 +4,11 @@ This file records user-visible Android Workbench changes.
 
 ## Unreleased
 
+### Added
+
+- A project-local emulator manager that lists every installed AVD with its
+  running state and offers Start or Stop without changing target selection.
+
 ### Fixed
 
 - Native Logcat shutdown now irreversibly closes its view, timers, pickers, and

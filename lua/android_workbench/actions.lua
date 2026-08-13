@@ -36,6 +36,7 @@ local registry = {
   { id = 'run', label = 'Run', argv = { 'run' }, predicate = idle },
   { id = 'gradle_task', label = 'Run Gradle task', argv = { 'gradle' }, predicate = idle },
   { id = 'stop', label = 'Stop application', argv = { 'stop' }, predicate = can_stop_application },
+  { id = 'manage_emulators', label = 'Manage emulators', argv = { 'emulator' }, predicate = idle },
   { id = 'start_emulator', label = 'Start emulator', argv = { 'emulator', 'start' }, predicate = idle },
   { id = 'stop_emulator', label = 'Stop emulator', argv = { 'emulator', 'stop' }, predicate = can_stop_emulator },
   { id = 'cancel_build', label = 'Cancel build', argv = { 'cancel' }, predicate = function(status) return status.operation == 'build' end },
@@ -53,6 +54,12 @@ local registry = {
     label = 'Cancel emulator start',
     argv = { 'cancel' },
     predicate = function(status) return status.operation == 'emulator_start' end,
+  },
+  {
+    id = 'cancel_emulator_manage',
+    label = 'Cancel emulator manager',
+    argv = { 'cancel' },
+    predicate = function(status) return status.operation == 'emulator_manage' end,
   },
   {
     id = 'cancel_emulator_stop',

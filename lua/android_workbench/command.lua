@@ -6,7 +6,7 @@ local LOGCAT_ACTIONS = { 'sessions', 'stop' }
 local LOGCAT_STOP_ACTIONS = { 'all' }
 local TARGETS = { 'app', 'device', 'variant' }
 local USAGE =
-  'Usage: :Android [build | run | gradle | output | stop | cancel | emulator start | emulator stop | logcat [sessions | stop [all]] | status | refresh | target app | target variant | target device]'
+  'Usage: :Android [build | run | gradle | output | stop | cancel | emulator [start | stop] | logcat [sessions | stop [all]] | status | refresh | target app | target variant | target device]'
 
 local function matches(candidates, lead)
   local result = {}
@@ -98,6 +98,10 @@ function M.execute(args, context)
   end
 
   if subcommand == 'emulator' then
+    if #args == 1 then
+      android.manage_emulators(context)
+      return true
+    end
     if #args == 2 and args[2] == 'start' then
       android.start_emulator(context)
       return true
@@ -106,7 +110,7 @@ function M.execute(args, context)
       android.stop_emulator(context)
       return true
     end
-    return invalid 'The emulator command requires start or stop.'
+    return invalid 'The emulator command accepts no action, start, or stop.'
   end
 
   if subcommand == 'logcat' then

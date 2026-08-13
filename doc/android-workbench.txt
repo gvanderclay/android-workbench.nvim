@@ -459,6 +459,7 @@ Android action starts.
                                                     *android-workbench.build()*
                                                       *android-workbench.run()*
                                               *android-workbench.gradle_task()*
+                                         *android-workbench.manage_emulators()*
                                            *android-workbench.start_emulator()*
                                             *android-workbench.stop_emulator()*
                                                      *android-workbench.stop()*
@@ -469,6 +470,7 @@ Android action starts.
   handle = android.build(context, callback)
   handle = android.run(context, callback)
   handle = android.gradle_task(context, callback)
+  handle = android.manage_emulators(context, callback)
   handle = android.start_emulator(context, callback)
   handle = android.stop_emulator(context, callback)
   handle = android.stop(context, callback)
@@ -567,6 +569,7 @@ Successful action results guarantee these fields:
   run            `{ kind = 'run', target, device, component, task }`
   gradle_task    `{ kind = 'gradle_task', gradle_task, task }`
   stop           `{ kind = 'stop', target, device }`
+  manage_emulators `{ kind = 'emulator_start'|'emulator_stop', device }`
   start_emulator `{ kind = 'emulator_start', device }`
   stop_emulator  `{ kind = 'emulator_stop', device }`
   logcat         `{ kind = 'logcat', target, device, handle }`
@@ -697,6 +700,14 @@ them, but reachability is not a support promise.
         preserves wireless ADB serials containing spaces exactly but does not
         pair, authorize, connect, or disconnect devices.
 
+                                                            *:Android-emulator*
+:Android emulator
+        List every installed AVD with its running or stopped state, then open
+        a contextual action picker. A running AVD offers Stop; a stopped AVD
+        offers Start. The chosen action uses the same exact-identity,
+        readiness, timeout, and cancellation rules as the explicit commands
+        below. Managing an AVD does not change the project's selected device.
+
                                                      *:Android-emulator-start*
 :Android emulator start
         Start the remembered AVD, or choose from an AVD-only picker when no AVD
@@ -782,12 +793,12 @@ them, but reachability is not a support promise.
 
 :Android cancel
         Cancel the active build, run, arbitrary Gradle task, application-stop,
-        emulator-start, or emulator-stop workflow for the current root. An
-        accepted cancellation keeps the root's operation slot occupied until
-        its current child terminates. If an adapter refuses cancellation, the
-        workflow remains active and may still complete normally. Process-backed
-        adapters are expected to terminate their child within a bounded grace
-        period.
+        emulator-manager, emulator-start, or emulator-stop workflow for the
+        current root. An accepted cancellation keeps the root's operation slot
+        occupied until its current child terminates. If an adapter refuses
+        cancellation, the workflow remains active and may still complete
+        normally. Process-backed adapters are expected to terminate their child
+        within a bounded grace period.
 
 :Android logcat
         Start or reveal Logcat for the selected application and online device.
@@ -879,9 +890,9 @@ queries ADB, or enumerates AVDs.
 Android discovery and Gradle Build/Run/arbitrary-task execution evaluate
 project-owned build logic. The default trust adapter calls |vim.secure.read()|
 immediately before discovery and again immediately before actual Gradle
-execution. Device and AVD discovery plus emulator start/stop use only Android
-SDK/ADB tooling and never prompt for Gradle trust. Merely opening a project or
-requesting status does not prompt, query ADB, or enumerate AVDs.
+execution. Device and AVD discovery plus emulator management/start/stop use
+only Android SDK/ADB tooling and never prompt for Gradle trust. Merely opening a
+project or requesting status does not prompt, query ADB, or enumerate AVDs.
 
 Discovery executes the project `gradlew` directly with a bundled, versioned
 init script. It uses argv rather than a shell, disables configuration-on-demand
