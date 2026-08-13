@@ -1,4 +1,5 @@
 :Android	android-workbench.txt	/*:Android*
+:Android-emulator	android-workbench.txt	/*:Android-emulator*
 :Android-emulator-start	android-workbench.txt	/*:Android-emulator-start*
 :Android-emulator-stop	android-workbench.txt	/*:Android-emulator-stop*
 :Android-gradle	android-workbench.txt	/*:Android-gradle*
@@ -14,6 +15,7 @@ android-workbench.cancel()	android-workbench.txt	/*android-workbench.cancel()*
 android-workbench.gradle_task()	android-workbench.txt	/*android-workbench.gradle_task()*
 android-workbench.is_project()	android-workbench.txt	/*android-workbench.is_project()*
 android-workbench.logcat()	android-workbench.txt	/*android-workbench.logcat()*
+android-workbench.manage_emulators()	android-workbench.txt	/*android-workbench.manage_emulators()*
 android-workbench.open_actions()	android-workbench.txt	/*android-workbench.open_actions()*
 android-workbench.refresh()	android-workbench.txt	/*android-workbench.refresh()*
 android-workbench.run()	android-workbench.txt	/*android-workbench.run()*

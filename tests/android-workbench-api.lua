@@ -71,6 +71,7 @@ local logcat_shows = 0
 local logcat_stops = 0
 local logcat_abandons = 0
 local current_avd_name = 'Pixel_8_API_35'
+local avd_running = true
 local hold_device_validation = false
 local pending_device_validation
 local validated_serial_override
@@ -277,7 +278,7 @@ local ports = {
     end,
     list_devices = function(_, callback)
       adb_calls[#adb_calls + 1] = { kind = 'list' }
-      vim.schedule(function() callback(nil, { { serial = 'emulator-5554', state = 'online', label = 'Pixel' } }) end)
+      vim.schedule(function() callback(nil, avd_running and { { serial = 'emulator-5554', state = 'online', label = 'Pixel' } } or {}) end)
       return { cancel = function() return true end }
     end,
     validate_serial = function(_, serial, callback)
@@ -425,6 +426,7 @@ local ok, unexpected = xpcall(function()
       'gradle_task',
       'is_project',
       'logcat',
+      'manage_emulators',
       'open_actions',
       'refresh',
       'run',
@@ -687,7 +689,7 @@ local ok, unexpected = xpcall(function()
       logcat = 'stopped',
       selection = {},
     },
-    { 'build', 'run', 'gradle_task', 'start_emulator', 'open_logcat', 'select_app', 'select_device', 'refresh', 'status' }
+    { 'build', 'run', 'gradle_task', 'manage_emulators', 'start_emulator', 'open_logcat', 'select_app', 'select_device', 'refresh', 'status' }
   )
   expect(
     'selected palette actions',
@@ -701,6 +703,7 @@ local ok, unexpected = xpcall(function()
       'run',
       'gradle_task',
       'stop',
+      'manage_emulators',
       'start_emulator',
       'stop_emulator',
       'show_logcat',
@@ -721,7 +724,7 @@ local ok, unexpected = xpcall(function()
       logcat = 'stopped',
       selection = { app = {}, variant = 'debug', device = { avd_name = current_avd_name } },
     },
-    { 'build', 'run', 'gradle_task', 'start_emulator', 'open_logcat', 'select_app', 'select_variant', 'select_device', 'refresh', 'status' }
+    { 'build', 'run', 'gradle_task', 'manage_emulators', 'start_emulator', 'open_logcat', 'select_app', 'select_variant', 'select_device', 'refresh', 'status' }
   )
   expect(
     'active build palette actions',
@@ -758,6 +761,15 @@ local ok, unexpected = xpcall(function()
       selection = { app = {}, variant = 'debug', device = {} },
     },
     { 'cancel_stop', 'stop_logcat', 'status' }
+  )
+  expect(
+    'active emulator-manager palette actions',
+    action_ids {
+      operation = 'emulator_manage',
+      logcat = 'stopped',
+      selection = {},
+    },
+    { 'cancel_emulator_manage', 'open_logcat', 'status' }
   )
   expect(
     'active emulator-start palette actions',
@@ -797,12 +809,14 @@ local ok, unexpected = xpcall(function()
   local original_gradle_task = android.gradle_task
   local original_show_task_output = android.show_task_output
   local emulator_command_calls = {
+    original_manage_emulators = android.manage_emulators,
     original_select_logcat_session = android.select_logcat_session,
     original_stop_logcat = android.stop_logcat,
     original_stop_all_logcats = android.stop_all_logcats,
   }
   android.start_emulator = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'start', context = captured_context } end
   android.stop_emulator = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'stop', context = captured_context } end
+  android.manage_emulators = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'manage', context = captured_context } end
   android.gradle_task = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'gradle', context = captured_context } end
   android.show_task_output = function(captured_context) emulator_command_calls[#emulator_command_calls + 1] = { action = 'output', context = captured_context } end
   android.select_logcat_session = function(captured_context)
@@ -813,25 +827,27 @@ local ok, unexpected = xpcall(function()
     emulator_command_calls[#emulator_command_calls + 1] = { action = 'logcat_stop_all', context = captured_context }
   end
   local command_context = { root = root_one, path = '/captured/android/source.kt', bufnr = 37 }
+  expect('bare emulator command dispatches', original_execute({ 'emulator' }, command_context), true)
+  expect('bare emulator command uses manager facade', emulator_command_calls[1], { action = 'manage', context = command_context })
   expect('emulator start command dispatches', original_execute({ 'emulator', 'start' }, command_context), true)
-  expect('emulator start command uses facade', emulator_command_calls[1], { action = 'start', context = command_context })
+  expect('emulator start command uses facade', emulator_command_calls[2], { action = 'start', context = command_context })
   expect('emulator stop command dispatches', original_execute({ 'emulator', 'stop' }, command_context), true)
-  expect('emulator stop command uses facade', emulator_command_calls[2], { action = 'stop', context = command_context })
+  expect('emulator stop command uses facade', emulator_command_calls[3], { action = 'stop', context = command_context })
   expect('Gradle command dispatches', original_execute({ 'gradle' }, command_context), true)
-  expect('Gradle command uses facade', emulator_command_calls[3], { action = 'gradle', context = command_context })
+  expect('Gradle command uses facade', emulator_command_calls[4], { action = 'gradle', context = command_context })
   do
     local invalid_notifications = #notifications
     expect('Gradle command rejects raw arguments', original_execute({ 'gradle', '--info' }, command_context), false)
     expect('invalid command still uses the configured notification port', notifications[invalid_notifications + 1].code, 'invalid_command')
   end
   expect('output command dispatches', original_execute({ 'output' }, command_context), true)
-  expect('output command uses facade', emulator_command_calls[4], { action = 'output', context = command_context })
+  expect('output command uses facade', emulator_command_calls[5], { action = 'output', context = command_context })
   expect('Logcat sessions command dispatches', original_execute({ 'logcat', 'sessions' }, command_context), true)
-  expect('Logcat sessions command uses facade', emulator_command_calls[5], { action = 'logcat_sessions', context = command_context })
+  expect('Logcat sessions command uses facade', emulator_command_calls[6], { action = 'logcat_sessions', context = command_context })
   expect('Logcat current stop command dispatches', original_execute({ 'logcat', 'stop' }, command_context), true)
-  expect('Logcat current stop command uses facade', emulator_command_calls[6], { action = 'logcat_stop', context = command_context })
+  expect('Logcat current stop command uses facade', emulator_command_calls[7], { action = 'logcat_stop', context = command_context })
   expect('Logcat stop-all command dispatches', original_execute({ 'logcat', 'stop', 'all' }, command_context), true)
-  expect('Logcat stop-all command uses facade', emulator_command_calls[7], { action = 'logcat_stop_all', context = command_context })
+  expect('Logcat stop-all command uses facade', emulator_command_calls[8], { action = 'logcat_stop_all', context = command_context })
   do
     local invalid_notifications = #notifications
     expect('Logcat stop rejects unknown actions', original_execute({ 'logcat', 'stop', 'later' }, command_context), false)
@@ -839,6 +855,7 @@ local ok, unexpected = xpcall(function()
   end
   android.start_emulator = original_start_emulator
   android.stop_emulator = original_stop_emulator
+  android.manage_emulators = emulator_command_calls.original_manage_emulators
   android.gradle_task = original_gradle_task
   android.show_task_output = original_show_task_output
   android.select_logcat_session = emulator_command_calls.original_select_logcat_session
@@ -853,6 +870,7 @@ local ok, unexpected = xpcall(function()
   end
   expect('emulator start facade is public', type(android.start_emulator), 'function')
   expect('emulator stop facade is public', type(android.stop_emulator), 'function')
+  expect('emulator manager facade is public', type(android.manage_emulators), 'function')
   expect('Gradle-task facade is public', type(android.gradle_task), 'function')
   expect('task-output facade is public', type(android.show_task_output), 'function')
   expect('Logcat-session facade is public', type(android.select_logcat_session), 'function')
@@ -895,6 +913,106 @@ local ok, unexpected = xpcall(function()
   expect('palette dispatch preserves captured buffer', dispatched.context.bufnr, 37)
   hold_picker = false
   pending_picker = nil
+
+  do
+    hold_picker = true
+    local adb_calls_before_manager = #adb_calls
+    local emulator_calls_before_manager = #emulator_calls
+    local notifications_before_manager = #notifications
+    local manager_result
+    local manager_state_saves = state_saves[root_one] or 0
+    local manager_handle = android.manage_emulators({ root = root_one }, function(err, result) manager_result = { err = err, result = result } end)
+    expect_true('emulator manager returns a cancel handle', type(manager_handle) == 'table' and type(manager_handle.cancel) == 'function')
+    expect_true('emulator manager reaches the AVD picker', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    local avd_picker = pending_picker
+    expect('emulator manager AVD prompt', avd_picker.request.prompt, 'Android emulator')
+    expect('emulator manager lists running state', avd_picker.request.format_item(avd_picker.request.items[1]), 'Pixel_8_API_35 (running: emulator-5554)')
+    pending_picker = nil
+    avd_picker.callback(nil, avd_picker.request.items[1])
+    expect_true('emulator manager reaches the contextual action picker', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    local manager_action_picker = pending_picker
+    expect('running emulator action prompt', manager_action_picker.request.prompt, 'Pixel_8_API_35')
+    expect('running emulator offers only Stop', manager_action_picker.request.items, { { id = 'stop', label = 'Stop' } })
+    manager_action_picker.callback(nil, manager_action_picker.request.items[1])
+    expect_true('emulator manager Stop reaches its terminal', vim.wait(1000, function() return manager_result ~= nil end, 10))
+    expect('emulator manager Stop succeeds', manager_result.err, nil)
+    expect('emulator manager reports the exact stopped AVD', manager_result.result, {
+      kind = 'emulator_stop',
+      device = { avd_name = 'Pixel_8_API_35', state = 'stopped', label = 'Pixel_8_API_35' },
+    })
+    expect('emulator manager does not change project device selection', state_saves[root_one] or 0, manager_state_saves)
+
+    avd_running = false
+    manager_result = nil
+    pending_picker = nil
+    android.manage_emulators({ root = root_one }, function(err, result) manager_result = { err = err, result = result } end)
+    expect_true('emulator manager reaches the stopped AVD picker', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    avd_picker = pending_picker
+    expect('emulator manager lists stopped state', avd_picker.request.format_item(avd_picker.request.items[1]), 'Pixel_8_API_35 (stopped)')
+    pending_picker = nil
+    avd_picker.callback(nil, avd_picker.request.items[1])
+    expect_true('stopped emulator reaches the contextual action picker', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    manager_action_picker = pending_picker
+    expect('stopped emulator offers only Start', manager_action_picker.request.items, { { id = 'start', label = 'Start' } })
+    manager_action_picker.callback(nil, manager_action_picker.request.items[1])
+    expect_true('emulator manager Start reaches its terminal', vim.wait(1000, function() return manager_result ~= nil end, 10))
+    expect('emulator manager Start succeeds', manager_result.err, nil)
+    expect('emulator manager reports the exact started AVD', manager_result.result, {
+      kind = 'emulator_start',
+      device = { serial = 'emulator-5554', avd_name = 'Pixel_8_API_35', state = 'online', label = 'Pixel_8_API_35' },
+    })
+    expect('emulator manager Start does not change project device selection', state_saves[root_one] or 0, manager_state_saves)
+
+    avd_running = true
+    manager_result = nil
+    pending_picker = nil
+    android.manage_emulators({ root = root_one }, function(err, result) manager_result = { err = err, result = result } end)
+    expect_true('emulator manager reaches the picker before forged selection', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    local forged_picker = pending_picker
+    local emulator_calls_before_forged_selection = #emulator_calls
+    forged_picker.callback(nil, { id = 'avd:forged' })
+    expect_true('forged emulator selection reaches its terminal', vim.wait(1000, function() return manager_result ~= nil end, 10))
+    expect('forged emulator selection is rejected', manager_result.err.code, 'invalid_selection')
+    expect('forged emulator selection starts no emulator action', #emulator_calls, emulator_calls_before_forged_selection)
+
+    manager_result = nil
+    pending_picker = nil
+    android.manage_emulators({ root = root_one }, function(err, result) manager_result = { err = err, result = result } end)
+    expect_true('emulator manager reaches the picker before forged action', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    avd_picker = pending_picker
+    pending_picker = nil
+    avd_picker.callback(nil, avd_picker.request.items[1])
+    expect_true('emulator manager reaches the action picker before forged action', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    local emulator_calls_before_forged_action = #emulator_calls
+    pending_picker.callback(nil, { id = 'delete' })
+    expect_true('forged emulator action reaches its terminal', vim.wait(1000, function() return manager_result ~= nil end, 10))
+    expect('forged emulator action is rejected', manager_result.err.code, 'invalid_selection')
+    expect('forged emulator action starts no emulator action', #emulator_calls, emulator_calls_before_forged_action)
+
+    manager_result = nil
+    pending_picker = nil
+    local cancelled_manager = android.manage_emulators({ root = root_one }, function(err, result) manager_result = { err = err, result = result } end)
+    expect_true('emulator manager reaches the picker before cancellation', vim.wait(1000, function() return pending_picker ~= nil end, 10))
+    local cancelled_picker = pending_picker
+    expect('emulator manager owns the active root slot', assert(android.status { root = root_one }).operation, 'emulator_manage')
+    expect('emulator manager cancellation is accepted', cancelled_manager.cancel(), true)
+    cancelled_picker.callback { code = 'cancelled', message = 'picker cancelled' }
+    expect_true('cancelled emulator manager reaches its terminal', vim.wait(1000, function() return manager_result ~= nil end, 10))
+    expect('emulator manager cancellation is classified', manager_result.err.code, 'cancelled')
+    expect('emulator manager cancellation releases the root slot', assert(android.status { root = root_one }).operation, nil)
+
+    while #adb_calls > adb_calls_before_manager do
+      table.remove(adb_calls)
+    end
+    while #emulator_calls > emulator_calls_before_manager do
+      table.remove(emulator_calls)
+    end
+    while #notifications > notifications_before_manager do
+      table.remove(notifications)
+    end
+    hold_picker = false
+    pending_picker = nil
+  end
 
   local task_notifications = {}
   local task_problem_batches = {}

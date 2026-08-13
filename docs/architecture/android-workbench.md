@@ -11,9 +11,10 @@ contracts. User-visible setup, commands, and controls belong in the
 
 Workbench owns the path from a canonical Gradle-wrapper root to a validated
 Android application/variant model, remembered target and device selection, AVD
-discovery and emulator start/stop, exact build/install/launch/stop operations,
-names-only registered Gradle-task discovery and execution, accepted build
-problems, and application-scoped Logcat. It composes picker, runner,
+discovery and project-local emulator management/start/stop, exact
+build/install/launch/stop operations, names-only registered Gradle-task
+discovery and execution, accepted build problems, and application-scoped
+Logcat. It composes picker, runner,
 notification, problem, persistence, trust, ADB, emulator, discovery, and Logcat
 capabilities through explicit ports.
 
@@ -53,9 +54,9 @@ prompt for trust, or start work. The first action constructs `App`.
 
 The supported pre-1.0 facade exposes setup, a side-effect-free Gradle-root
 membership query, status and action discovery, model refresh, target selection,
-emulator start/stop, Build/Run/application Stop, arbitrary Gradle tasks, native
-task-output reopen, Logcat start/session selection/current stop/root-local
-stop-all, cancellation, and shutdown. `setup()` returns no internal
+emulator management/start/stop, Build/Run/application Stop, arbitrary Gradle
+tasks, native task-output reopen, Logcat start/session selection/current
+stop/root-local stop-all, cancellation, and shutdown. `setup()` returns no internal
 configuration data. Notification fallback is owned by a private module rather
 than an accidental `_notify` facade member.
 
@@ -130,9 +131,9 @@ Telescope, Overseer, Trouble, or another optional presenter.
 ports, coordinates complete actions, and owns root-keyed Session,
 active-operation, and Logcat registries. Cross-component wiring belongs here.
 
-At most one Build, Run, application Stop, Gradle-task, emulator-start, or
-emulator-stop workflow is active per root. Logcat has a separate root-keyed
-registry and may survive task completion. Each root retains independent live
+At most one Build, Run, application Stop, Gradle-task, emulator-manager,
+emulator-start, or emulator-stop workflow is active per root. Logcat has a
+separate root-keyed registry and may survive task completion. Each root retains independent live
 entries keyed by application ID and device serial, independently cancellable
 pending starts, and one current identity. Aggregate status is running when any
 entry is live, otherwise starting when any start is pending, otherwise stopped.
@@ -217,7 +218,9 @@ commands.
 A running emulator is identified by both ADB serial and AVD name. A stopped AVD
 is identified by stable AVD name. Starting converges on that exact name and a
 final online identity. Stopping re-resolves the exact serial/name pair before a
-targeted kill and waits for disappearance or identity change.
+targeted kill and waits for disappearance or identity change. The emulator
+manager resolves picker results back to this inventory and performs its action
+without reading or changing the project's remembered device selection.
 
 ### ADB and emulator
 

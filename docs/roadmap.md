@@ -267,6 +267,36 @@ adapter support, publish to a plugin registry, or add release automation.
 - [ ] Record the exact tag commit, CI run, consumer result, and GitHub release
   URL after publication; keep any real dotfiles lock update separate.
 
+## R6 — Project-local emulator manager
+
+Keep this feature separate from the exact `v0.2.0` candidate. The manager is
+available only from a resolved Gradle-wrapper project and does not replace or
+mutate the project's selected deployment device.
+
+### R6.1 State-aware manager
+
+- [x] List every installed AVD with running/stopped state and resolve picker
+  results against the offered inventory.
+- [x] Offer only Stop for a running AVD and only Start for a stopped AVD while
+  preserving the existing explicit emulator start/stop commands.
+- [x] Document and verify the public facade, command, contextual action,
+  cancellation, exact result, root isolation, and selection invariants.
+
+Manual evidence on 2026-08-12: the owner loaded this feature worktree from a
+Gradle-wrapper project and confirmed the state-aware manager could start and
+stop a live local AVD.
+
+### R6.2 Cold Boot
+
+- [ ] Add Cold Boot only for stopped AVDs through the native emulator service,
+  using `-no-snapshot-load` with the existing readiness, timeout, identity, and
+  cancellation behavior.
+
+### R6.3 Consumer cutover
+
+- [ ] Pin the exact reviewed package commit in the sibling dotfiles consumer,
+  map `<Leader>ie` to the manager, and run its Android and startup smokes.
+
 ## Deferred until demonstrated demand
 
 - Windows `gradlew.bat` support and broad historical Gradle/AGP matrices.
@@ -274,7 +304,7 @@ adapter support, publish to a plugin registry, or add release automation.
   custom activities, launch arguments, richer run configurations, wireless
   pairing, screenshots, and SDK management.
 - Reading Android Studio state, embedding the emulator, and AVD creation,
-  deletion, wiping, cold boot, or snapshot management.
+  deletion, wiping, or snapshot management.
 - Kotlin/Java LSP, formatting, DAP, test frameworks, KMP/iOS, autosave, and file
   watching.
 - Provider registries, dependency-injection frameworks, automatic optional-

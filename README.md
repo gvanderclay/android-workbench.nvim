@@ -33,7 +33,8 @@ behind the current shape live in [the decision record](docs/decisions.md).
 - Root-isolated application, variant, physical-device, and AVD selection.
 - Exact Build, Run, application Stop, and arbitrary registered Gradle-task
   execution without shell-composed commands.
-- AVD discovery plus bounded emulator start/readiness and exact emulator stop.
+- A project-local, state-aware AVD manager plus bounded emulator
+  start/readiness and exact emulator stop.
 - Independent app/device Logcat sessions with retained hidden history, session
   switching, pause, follow, filtering, clearing, and source navigation.
 - Bounded Kotlin, Java, Android Lint, AAPT, and AGP problem parsing with a
@@ -116,7 +117,8 @@ Run `:Android` for the contextual action menu. The command also accepts:
 
 - `status` and `refresh`
 - `target app`, `target variant`, and `target device`
-- `emulator start` and `emulator stop`
+- `emulator` for the state-aware manager, plus `emulator start` and
+  `emulator stop`
 - `build`, `run`, `stop`, `gradle`, and `output`
 - `logcat`, `logcat sessions`, `logcat stop`, `logcat stop all`, and `cancel`
 

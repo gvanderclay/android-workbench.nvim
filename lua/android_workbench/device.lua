@@ -534,6 +534,78 @@ function Device:_stop_avd(session, operation, expected, device, remember_avd, ca
 end
 
 ---@param session table
+---@param callback fun(err: table?, emulators: table[]?)
+---@return table
+function Device:list_emulators(session, callback)
+  callback = callback or function() end
+  local operation = new_operation(session.root, callback)
+  self:_inventory(session, operation, function(err, resources)
+    if err then
+      operation:finish(err)
+      return
+    end
+    operation:finish(nil, vim.tbl_filter(function(resource) return resource.avd_name ~= nil end, resources))
+  end)
+  return operation
+end
+
+---@param session table
+---@param resource table
+---@param callback fun(err: table?, device: table?)
+---@return table
+function Device:start_emulator(session, resource, callback)
+  callback = callback or function() end
+  local operation = new_operation(session.root, callback)
+  local avd_name = raw_string(resource, 'avd_name')
+  if not valid_identity(avd_name) then
+    operation:finish(workbench_error('invalid_avd', 'The selected Android virtual device is invalid.', session.root))
+    return operation
+  end
+
+  operation:start_child(
+    function(done) return self.emulator:start(avd_name, done) end,
+    function(err, value)
+      if err then
+        operation:finish(err)
+        return
+      end
+      local device, validation_err = runtime_device(value, nil, avd_name, session.root)
+      operation:finish(validation_err, device)
+    end,
+    function(err) return workbench_error('emulator_start_failed', ('Could not start Android emulator %s.'):format(avd_name), session.root, tostring(err)) end
+  )
+  return operation
+end
+
+---@param session table
+---@param resource table
+---@param callback fun(err: table?, device: table?)
+---@return table
+function Device:stop_emulator(session, resource, callback)
+  callback = callback or function() end
+  local operation = new_operation(session.root, callback)
+  local avd_name = raw_string(resource, 'avd_name')
+  local serial = raw_string(resource, 'serial')
+  if not valid_identity(avd_name) or not valid_serial(serial) then
+    operation:finish(workbench_error('invalid_emulator', 'The selected running Android emulator is invalid.', session.root))
+    return operation
+  end
+
+  operation:start_child(function(done) return self.emulator:stop({ avd_name = avd_name, serial = serial }, done) end, function(err, value)
+    if err then
+      operation:finish(err)
+      return
+    end
+    if type(value) ~= 'table' or raw_string(value, 'avd_name') ~= avd_name or raw_string(value, 'serial') ~= serial then
+      operation:finish(workbench_error('invalid_emulator_result', 'The emulator service stopped a different Android emulator.', session.root))
+      return
+    end
+    operation:finish(nil, stopped_avd(avd_name, raw_string(resource, 'label')))
+  end, function(err) return workbench_error('emulator_stop_failed', ('Could not stop Android emulator %s.'):format(avd_name), session.root, tostring(err)) end)
+  return operation
+end
+
+---@param session table
 ---@param callback fun(err: table?, device: table?)
 ---@return table
 function Device:select(session, callback)
