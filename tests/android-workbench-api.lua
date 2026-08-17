@@ -392,6 +392,28 @@ local ports = {
   },
 }
 
+local function verify_custom_runner_output_capability(ports, root)
+  local shown_roots = {}
+  local capability_ports = vim.tbl_extend('force', {}, ports)
+  capability_ports.runner = {
+    start = ports.runner.start,
+    has_output = function(candidate_root) return candidate_root == root end,
+    show_output = function(candidate_root)
+      shown_roots[#shown_roots + 1] = candidate_root
+      return true
+    end,
+  }
+  local app = require('android_workbench.app').new { ports = capability_ports }
+  expect('custom runner output capability reaches root status', assert(app:status { root = root }).task_output, true)
+  expect('App delegates output to a capable custom runner', app:show_task_output { root = root }, true)
+  expect('App delegates only the canonical current root', shown_roots, { root })
+  capability_ports.runner.show_output = function() error 'output failed' end
+  local shown, err = app:show_task_output { root = root }
+  expect('custom output exception is contained', shown, nil)
+  expect('custom output exception has a closed error', err.code, 'task_output_open_failed')
+  app:shutdown()
+end
+
 local ok, unexpected = xpcall(function()
   expect('Android command is registered', vim.fn.exists ':Android', 2)
   expect('command implementation stays lazy at startup', package.loaded['android_workbench.command'], nil)
@@ -479,6 +501,14 @@ local ok, unexpected = xpcall(function()
   valid, config_error = pcall(android.setup, { ports = { picker = {} } })
   expect('incomplete picker port is rejected', valid, false)
   expect_true('picker validation names missing method', tostring(config_error):find('ports.picker.select', 1, true))
+
+  valid, config_error = pcall(android.setup, { ports = { runner = { start = function() end, has_output = function() end } } })
+  expect('partial runner output capability is rejected', valid, false)
+  expect_true('runner output validation names missing method', tostring(config_error):find('ports.runner.show_output', 1, true))
+
+  valid, config_error = pcall(android.setup, { ports = { runner = { start = function() end, show_output = function() end } } })
+  expect('inverse partial runner output capability is rejected', valid, false)
+  expect_true('runner output validation names missing predicate', tostring(config_error):find('ports.runner.has_output', 1, true))
 
   valid, config_error = pcall(android.setup, { ports = { logcat = {} } })
   expect('incomplete logcat port is rejected', valid, false)
@@ -678,13 +708,14 @@ local ok, unexpected = xpcall(function()
   expect('App reopens the latest native root output', native_output_app:show_task_output { root = root_five }, true)
   expect('App reopens only the native output buffer', vim.api.nvim_get_current_buf(), native_output_buf)
   native_output_app:shutdown()
-  expect('App shutdown clears native task output ownership', native_runner._has_output(root_five), false)
+  expect('App shutdown clears native task output ownership', native_runner.has_output(root_five), false)
 
   local custom_output_app = require('android_workbench.app').new { ports = ports }
   shown, output_err = custom_output_app:show_task_output { root = root_five }
   expect('custom runner output is not taken over', shown, nil)
   expect('custom runner keeps output ownership', output_err.code, 'task_output_unavailable')
   custom_output_app:shutdown()
+  verify_custom_runner_output_capability(ports, root_five)
 
   android.setup { ports = ports, logcat = { open_on_run = true } }
   expect('setup performs no trust check', next(trust_calls), nil)

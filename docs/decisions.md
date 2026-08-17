@@ -141,8 +141,9 @@ vimdoc and tests.
   Reveal/close behavior belongs to a constructed sink, not top-level setup.
   Trouble is never required or opened automatically. The dependency-free
   native runner separately owns one latest bounded output view per canonical
-  root and reopens it through `:Android output`; custom runners retain their own
-  output and window policy.
+  root. `:Android output` delegates through the runner port's optional
+  root-keyed output pair without learning provider tasks or windows. Custom
+  runners retain their own output, retention, and window policy.
 - **Revisit when:** Real output justifies another recognized format, a second
   presenter needs additional neutral data, or the terminal policy must represent
   a demonstrated workflow that the current batch cannot express.
@@ -285,7 +286,9 @@ vimdoc and tests.
   promotion.
 - **Requirements:** Document every supported field and calling convention, keep
   shared conformance fixtures, pass owned values across the boundary, and
-  revalidate identity-bearing returns. Keep the public ADB service limited to
+  revalidate identity-bearing returns. Treat the runner's optional
+  `has_output` and `show_output` functions as one capability: both are present
+  or neither is. Keep the public ADB service limited to
   `list_devices`, `validate_serial`, `resolve_launch_components`, `launch`, and
   `stop`; native emulator and Logcat helpers remain conditional private
   capabilities.

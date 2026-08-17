@@ -34,6 +34,8 @@ local native_instances = setmetatable({}, { __mode = 'k' })
 
 ---@class AndroidWorkbenchRunner
 ---@field start fun(request: AndroidWorkbenchRunnerRequest, callback: fun(error: AndroidWorkbenchError?, result: AndroidWorkbenchRunnerResult?)): AndroidWorkbenchOperationHandle?
+---@field has_output? fun(root: string): boolean
+---@field show_output? fun(root: string): boolean
 
 local function close_timer(timer)
   if not timer then return end
@@ -203,8 +205,8 @@ function M.new(opts)
       return handle
     end,
   }
-  function runner._show_output(root, show_opts) return output.show(root, show_opts) end
-  function runner._has_output(root) return output.has_output(root) end
+  function runner.show_output(root) return output.show(root) end
+  function runner.has_output(root) return output.has_output(root) end
   function runner._close_output() return output.close() end
   native_instances[runner] = true
   return runner

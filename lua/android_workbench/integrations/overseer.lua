@@ -34,8 +34,48 @@ function M.new(opts)
     schedule = schedule,
     max_capture_bytes = opts.max_capture_bytes,
   }
+  local output_by_root = {}
+
+  local function output_task(root)
+    if type(root) ~= 'string' or root == '' then return nil end
+    local entry = output_by_root[root]
+    local task = entry and entry.task or nil
+    if type(task) ~= 'table' or type(task.get_bufnr) ~= 'function' or type(task.open_output) ~= 'function' then return nil end
+    local ok, bufnr = pcall(task.get_bufnr, task)
+    if not ok or type(bufnr) ~= 'number' or bufnr <= 0 or bufnr % 1 ~= 0 or output_by_root[root] ~= entry then return nil end
+    return task, bufnr
+  end
+
+  local function remember_output(root, task)
+    if type(task.get_bufnr) ~= 'function' or type(task.open_output) ~= 'function' then
+      output_by_root[root] = nil
+      return nil
+    end
+    local entry = { task = task }
+    output_by_root[root] = entry
+    pcall(task.subscribe, task, 'on_dispose', function()
+      if output_by_root[root] == entry then output_by_root[root] = nil end
+    end)
+    return entry
+  end
+
+  local function forget_output(root, entry)
+    if entry and output_by_root[root] == entry then output_by_root[root] = nil end
+  end
 
   return {
+    has_output = function(root) return output_task(root) ~= nil end,
+    show_output = function(root)
+      local task, bufnr = output_task(root)
+      if not task then return false end
+      local winid = vim.fn.bufwinid(bufnr)
+      if winid ~= -1 and vim.api.nvim_win_is_valid(winid) then
+        local ok = pcall(vim.api.nvim_set_current_win, winid)
+        return ok
+      end
+      local ok, shown = pcall(task.open_output, task, 'horizontal')
+      return ok and shown ~= false
+    end,
     start = function(request, callback)
       local operation = TaskOperation.new(request, callback, operation_opts)
       local parser = components == nil and Problems.new() or nil
@@ -226,6 +266,9 @@ function M.new(opts)
         return handle
       end
 
+      local output_root = operation.request.cwd
+      local output_entry = remember_output(output_root, task)
+
       if task_completion then
         process_completion = process_completion or { code = task_completion.code, signal = 0 }
         complete_when_released()
@@ -234,6 +277,7 @@ function M.new(opts)
 
       local started, start_result = pcall(task.start, task)
       if not started or start_result ~= true then
+        forget_output(output_root, output_entry)
         operation:complete(TaskOperation.failure('task_start_failed', 'Could not start Overseer task.', { error = started and nil or tostring(start_result) }))
         pcall(task.dispose, task, true)
       end

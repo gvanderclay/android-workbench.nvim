@@ -216,7 +216,7 @@ function M.new(config)
   local discovery = ports.discovery or require 'android_workbench.gradle.discovery'
   local adb = ports.adb or Adb.new()
   local runner = ports.runner or Runner.new()
-  local task_output = Runner._is_native(runner) and runner or nil
+  local task_output = type(runner.has_output) == 'function' and type(runner.show_output) == 'function' and runner or nil
   local picker = ports.picker or default_picker()
   local notifications = ports.notifications or default_notifications()
   local problems = ports.problems or require('android_workbench.integrations.quickfix').new()
@@ -261,7 +261,7 @@ end
 
 function App:_has_task_output(root)
   if not self.task_output then return false end
-  local ok, available = pcall(self.task_output._has_output, root)
+  local ok, available = pcall(self.task_output.has_output, root)
   return ok and available == true
 end
 
@@ -398,11 +398,11 @@ end
 function App:show_task_output(context)
   local session, err = self:_session(context)
   if not session then return nil, err end
-  if not self.task_output then return nil, workbench_error('task_output_unavailable', 'The configured runner owns its task output.', session.root) end
+  if not self.task_output then return nil, workbench_error('task_output_unavailable', 'The configured runner does not expose task output.', session.root) end
   if not self:_has_task_output(session.root) then
     return nil, workbench_error('no_task_output', ('No Android task output is available for %s.'):format(session.root), session.root)
   end
-  local ok, shown = pcall(self.task_output._show_output, session.root)
+  local ok, shown = pcall(self.task_output.show_output, session.root)
   if not ok or shown ~= true then
     return nil, workbench_error('task_output_open_failed', ('Could not open Android task output for %s.'):format(session.root), session.root)
   end
@@ -1673,7 +1673,7 @@ function App:shutdown()
   self.closed = true
   local task_output = self.task_output
   self.task_output = nil
-  if task_output then pcall(task_output._close_output) end
+  if task_output and Runner._is_native(task_output) then pcall(task_output._close_output) end
   local operations = self.operations
   self.operations = {}
   self.active = {}

@@ -54,9 +54,10 @@ prompt for trust, or start work. The first action constructs `App`.
 The supported pre-1.0 facade exposes setup, a side-effect-free Gradle-root
 membership query, status and action discovery, model refresh, target selection,
 emulator management/start/stop, Build/Run/application Stop, arbitrary Gradle
-tasks, native task-output reopen, Logcat start/session selection/current
-stop/root-local stop-all, cancellation, and shutdown. The manager also offers
-Cold Boot when the emulator service exposes it; the native service does.
+tasks, configured-runner task-output reopen, Logcat start/session
+selection/current stop/root-local stop-all, cancellation, and shutdown. The
+manager also offers Cold Boot when the emulator service exposes it; the native
+service does.
 `setup()` returns no internal configuration data. Notification fallback is
 owned by a private module rather than an accidental `_notify` facade member.
 
@@ -112,7 +113,7 @@ command/plugin -> public facade -> private root resolver
                                    +-> Execution -> runner
                                    |                +-> task operation
                                    |                |    -> problem parser
-                                   |                +-> native task output
+                                   |                +-> runner-owned task output
                                    +-> Logcat presenter -> model + runner
                                    +-> picker + notifications + problem sink
 
@@ -273,9 +274,13 @@ The native runner is dependency-free. `task_output.lua` owns one latest
 count- and byte-bounded scratch view per canonical root. A native Gradle task
 opens its owned split without focus; `:Android output` reopens that same view
 after success or failure. Replacement and shutdown invalidate old view
-generations before late output can mutate a successor. Custom runners keep
-their own output and window policy; the runner port does not require native
-presentation methods.
+generations before late output can mutate a successor. The optional runner
+output capability lets `App` ask whether a canonical root has output and ask
+the runner to show it; task, buffer, window, and retention policy remain with
+the runner. The Overseer adapter remembers only its latest Workbench task per
+root, clears the reference when that exact task is disposed, focuses an
+existing output window, and otherwise opens it with Overseer's public task API.
+A stale task disposal cannot clear its successor.
 
 ### Problems
 
@@ -364,7 +369,9 @@ built-in implementation; there is no provider registry or automatic detection.
   `argv`, `cwd`, optional string-map `env`, display `name`, workflow metadata,
   and a neutral output callback. Workbench gives the adapter an owned request,
   retains canonical name and metadata privately, validates the terminal DTO,
-  normalizes problem items, and removes unknown result fields.
+  normalizes problem items, and removes unknown result fields. A runner may
+  additionally provide the plain-function pair `has_output(root) -> boolean`
+  and `show_output(root) -> boolean`; either both are present or neither is.
 - **`picker` (supported during `0.x`):** Plain-function
   `select(request, done) -> optional handle`. The closed request contains
   `prompt`, owned `items`, `format_item`, and optional `current`. Dismissal is
@@ -508,7 +515,8 @@ The standalone contract suites are organized by owner:
   protocol/model/task invariants and mutation rejection.
 - [`android-workbench-runner.lua`](../../tests/android-workbench-runner.lua):
   native/Overseer task parity, capture bounds, delivery order, cancellation,
-  exactly-once terminals, and native output ownership, bounds, and reopen.
+  exactly-once terminals, native output ownership and bounds, and root-local
+  output reopen through native and Overseer runners.
 - [`android-workbench-problems.lua`](../../tests/android-workbench-problems.lua):
   parsing, normalization, quickfix ownership, diagnostics, and clearing.
 - [`android-workbench-execution.lua`](../../tests/android-workbench-execution.lua):

@@ -45,6 +45,10 @@ local function validate_port(name, port)
   for _, method in ipairs(PORT_METHODS[name]) do
     if type(port[method]) ~= 'function' then fail(('ports.%s.%s'):format(name, method), 'must be a function') end
   end
+  if name == 'runner' and (port.has_output ~= nil or port.show_output ~= nil) then
+    if type(port.has_output) ~= 'function' then fail('ports.runner.has_output', 'must be a function when runner output is supported') end
+    if type(port.show_output) ~= 'function' then fail('ports.runner.show_output', 'must be a function when runner output is supported') end
+  end
 end
 
 local function validate_timer(path, value)

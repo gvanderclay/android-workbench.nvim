@@ -87,6 +87,10 @@ local ok, err = xpcall(function()
   assert(task_result.status == 'success', 'Overseer task did not succeed')
   assert(handle:cancel() == false, 'completed Overseer task remained cancellable')
   assert(table.concat(output, '\n'):find('NVIM v0.12.4', 1, true), 'Overseer did not stream Neovim output')
+  assert(runner.has_output(assert(vim.uv.cwd())), 'Overseer did not retain the Workbench task output')
+  local window_count = #vim.api.nvim_tabpage_list_wins(0)
+  assert(runner.show_output(assert(vim.uv.cwd())), 'Overseer did not reopen the Workbench task output')
+  assert(#vim.api.nvim_tabpage_list_wins(0) == window_count, 'Overseer duplicated an already-visible output window')
 end, debug.traceback)
 
 if not ok then

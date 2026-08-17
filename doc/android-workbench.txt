@@ -112,9 +112,11 @@ constructing the native runner: >lua
     ports = { runner = runner },
   })
 <
-An injected custom runner keeps complete ownership of its output UI. In that
-case |:Android-output| reports that native output is unavailable; it does not
-inspect or replace the custom runner's windows.
+An injected runner keeps ownership of its output UI. When it implements the
+optional output capability described in |android-workbench-runner|,
+|:Android-output| asks it to show the latest output for the current root.
+Otherwise the command reports that the configured runner does not expose task
+output.
 
 MAPPINGS
 
@@ -142,11 +144,13 @@ native runner. This does not change |vim.ui.select()| globally: >lua
 The Snacks picker must be enabled in Snacks' own setup. To use Telescope
 instead, construct `android_workbench.integrations.telescope` for `picker`.
 
-Overseer opens a non-focused output dock when a task starts,
-preserves unseen failed output, and disposes successful output on its normal
-timer. Pass `components` to the Overseer adapter constructor to choose a
-different presentation policy. Use `:OverseerToggle! bottom` to hide or reopen
-the task dock without moving the cursor.
+Overseer opens a non-focused output dock when a task starts, preserves unseen
+failed output, and disposes successful output on its normal timer. Pass
+`components` to the Overseer adapter constructor to choose a different
+presentation policy. |:Android-output| opens and focuses the exact latest
+Workbench task for the current root while Overseer still retains it. It focuses
+an existing output window or opens a horizontal split. Use
+`:OverseerToggle! bottom` to show or hide the full task dock.
 
 Build, Run, and arbitrary Gradle tasks collect recognized Kotlin, Java, Android
 Lint, AAPT, and AGP source errors into one Workbench-owned quickfix list per
@@ -282,6 +286,14 @@ integer `code` and `signal`; string `stdout`, `stderr`, and `error`; boolean
 canonical request values. Workbench rejects invalid field types, normalizes
 problems, and drops unknown result fields. `start()` may complete before it
 returns or later, and may return a method-style cancellable handle.
+
+A runner may also implement both `runner.has_output(root) -> boolean` and
+`runner.show_output(root) -> boolean` as plain-function calls. When both are
+present, |:Android-output| passes the current canonical root to them. The
+runner owns which task, buffer, and window that root refers to. `show_output()`
+returns true only when it opened the output. Supplying only one of the two
+functions is invalid. A runner without this optional pair remains supported;
+only |:Android-output| is unavailable.
 
 PROBLEM SINK
 
@@ -865,14 +877,17 @@ them, but reachability is not a support promise.
 
                                                      *:Android-output*
 :Android output
-        Reopen and focus the latest native Build, Run, or arbitrary Gradle-task
-        output for the current canonical root. The buffer remains available
-        after success or failure until another task for that root replaces it
-        or Android Workbench shuts down. It never selects or replaces an
-        unrelated buffer or window.
+        Ask the configured runner to reopen and focus the latest Build, Run, or
+        arbitrary Gradle-task output for the current canonical root. It never
+        asks for output from another root.
 
-        This command applies only to the dependency-free native runner. A
-        configured custom runner retains its own output and window policy.
+        The native runner retains that root's latest bounded scratch buffer
+        until another task replaces it or Android Workbench shuts down. The
+        Overseer adapter focuses an existing window for its exact latest
+        retained Workbench task or opens it in a horizontal split; output
+        becomes unavailable after Overseer disposes that task. A custom runner
+        without the optional output capability reports that task output is
+        unavailable.
 
                                                  *:Android-run*
 :Android run
@@ -1070,13 +1085,14 @@ and Logcat actions require an online device.
 
 BUILD OR RUN FAILED
 
-With the native runner, reopen the latest complete task output with: >vim
+When the configured runner exposes task output, reopen its latest Workbench
+task for the current project with: >vim
 
   :Android output
 <
 Recognized source errors also appear in the Workbench-owned quickfix list.
 Locationless or unrecognized failures remain in task output. A custom runner
-owns its own output UI, so use that runner's command instead.
+without the optional output capability requires its own output command.
 
 LOGCAT IS EMPTY
 

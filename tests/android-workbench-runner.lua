@@ -403,7 +403,8 @@ local ok, unexpected = xpcall(function()
   expect_true('native Gradle task creates an owned output buffer', output_buf ~= nil)
   expect('native output opens without moving focus', vim.api.nvim_get_current_win(), origin_win)
   expect('native output leaves the origin buffer alone', vim.api.nvim_win_get_buf(origin_win), origin_buf)
-  expect('native runner exposes an internal reopen operation', type(output_runner._show_output), 'function')
+  expect('native runner exposes the optional output predicate', type(output_runner.has_output), 'function')
+  expect('native runner exposes the optional output action', type(output_runner.show_output), 'function')
 
   if output_buf then
     local output_win = vim.fn.bufwinid(output_buf)
@@ -443,8 +444,8 @@ local ok, unexpected = xpcall(function()
 
     vim.api.nvim_win_close(output_win, true)
     expect('hiding output preserves its buffer', vim.api.nvim_buf_is_valid(output_buf), true)
-    if type(output_runner._show_output) == 'function' then
-      expect('latest root output can be reopened', output_runner._show_output '/project', true)
+    if type(output_runner.show_output) == 'function' then
+      expect('latest root output can be reopened', output_runner.show_output '/project', true)
       expect('reopen focuses only the owned output buffer', vim.api.nvim_get_current_buf(), output_buf)
     end
 
@@ -462,7 +463,7 @@ local ok, unexpected = xpcall(function()
     output_win = vim.fn.bufwinid(output_buf)
     expect_true('native output bar shows success', vim.wo[output_win].winbar:find('SUCCESS', 1, true) ~= nil)
     vim.api.nvim_win_close(output_win, true)
-    expect('successful output can be reopened', output_runner._show_output '/project', true)
+    expect('successful output can be reopened', output_runner.show_output '/project', true)
   end
 
   local bounded_calls = {}
@@ -522,7 +523,7 @@ local ok, unexpected = xpcall(function()
   gap_call.options.stdout(nil, '0123456789')
   expect('native output backlog keeps one scheduled drain', #gap_callbacks, 1)
   gap_flush()
-  expect('gap output can be shown', gap_runner._show_output '/gap', true)
+  expect('gap output can be shown', gap_runner.show_output '/gap', true)
   expect('delivery truncation never stitches across the gap', vim.api.nvim_buf_get_lines(0, 0, -1, false), {
     '… earlier output truncated …',
     '23456789',
@@ -547,10 +548,11 @@ local ok, unexpected = xpcall(function()
   output_calls[3].options.stdout(nil, 'late output after shutdown')
   output_calls[3].on_exit { code = 0, signal = 0 }
   expect('late native task still reaches its private terminal', late_completed.result.status, 'success')
-  expect('late output cannot recreate a closed root view', output_runner._has_output '/project', false)
+  expect('late output cannot recreate a closed root view', output_runner.has_output '/project', false)
 
   local task_definition
   local task
+  local opened_overseer_output
   local stop_behavior = 'complete'
   local overseer_output = {}
   local overseer_completion_count = 0
@@ -564,6 +566,8 @@ local ok, unexpected = xpcall(function()
         subscriptions = {},
         subscribe = function(self, event, callback) self.subscriptions[event] = callback end,
         start = function() return true end,
+        get_bufnr = function() return 42 end,
+        open_output = function(self, direction) opened_overseer_output = { task = self, direction = direction } end,
         stop = function(self)
           if stop_behavior == 'complete_then_throw' then
             self.subscriptions.on_complete(self, 'CANCELED', {})
@@ -594,6 +598,10 @@ local ok, unexpected = xpcall(function()
   expect('Overseer receives env', task_definition.env, request.env)
   expect('Overseer receives name', task_definition.name, request.name)
   expect('Overseer receives metadata', task_definition.metadata, request.metadata)
+  expect('Overseer output capability recognizes the exact root', overseer.has_output(request.cwd), true)
+  expect('Overseer output capability rejects another root', overseer.has_output '/another-project', false)
+  expect('Overseer reopens the latest exact task', overseer.show_output(request.cwd), true)
+  expect('Overseer opens the exact task in a focused horizontal split', opened_overseer_output, { task = task, direction = 'horizontal' })
   expect('Overseer uses jobstart strategy', task_definition.strategy[1], 'jobstart')
   expect('Overseer uses a plain output buffer', task_definition.strategy.use_terminal, false)
   expect('Overseer default keeps exit status ownership', task_definition.components[1], 'on_exit_set_status')
@@ -650,6 +658,7 @@ local ok, unexpected = xpcall(function()
   task.subscriptions.on_complete(task, 'SUCCESS', {})
   expect('Overseer completion is exactly once', overseer_completion_count, 1)
   expect('completed Overseer task cannot cancel', overseer_handle.cancel(), false)
+  local completed_output_task = task
 
   local pending_overseer_callbacks, pending_overseer_schedule, pending_overseer_flush = queued_scheduler()
   local pending_overseer_result
@@ -669,6 +678,11 @@ local ok, unexpected = xpcall(function()
   local overseer_cancelled
   overseer_handle = overseer.start(request, function(err, result) overseer_cancelled = { err = err, result = result } end)
   local cancelled_definition = task_definition
+  local cancelled_output_task = task
+  completed_output_task.subscriptions.on_dispose()
+  expect('stale Overseer disposal preserves successor output', overseer.has_output(request.cwd), true)
+  expect('Overseer successor output can be opened', overseer.show_output(request.cwd), true)
+  expect('Overseer opens the replacement task after stale disposal', opened_overseer_output.task, cancelled_output_task)
   expect('Overseer colon cancellation succeeds', overseer_handle:cancel(), true)
   expect('Overseer cancellation remains pending until process exit', overseer_cancelled, nil)
   expect('duplicate Overseer cancellation is ignored while stopping', overseer_handle:cancel(), false)
@@ -676,6 +690,8 @@ local ok, unexpected = xpcall(function()
   expect('Overseer cancellation has no adapter error', overseer_cancelled.err, nil)
   expect('Overseer cancellation maps status', overseer_cancelled.result.status, 'cancelled')
   expect('Overseer jobstart cancellation has no synthetic signal', overseer_cancelled.result.signal, nil)
+  cancelled_output_task.subscriptions.on_dispose()
+  expect('disposed Overseer output is no longer available', overseer.has_output(request.cwd), false)
 
   stop_behavior = 'false'
   local refused_completion
